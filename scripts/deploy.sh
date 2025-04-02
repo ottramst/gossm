@@ -1,47 +1,67 @@
 #!/bin/bash
-set -e -o pipefail
-trap '[ "$?" -eq 0 ] || echo "Error Line:<$LINENO> Error Function:<${FUNCNAME}>"' EXIT
-cd `dirname $0` && cd ..
-CURRENT=`pwd`
+set -e
 
-function test
-{
-    go test -v $(go list ./... | grep -v vendor) --count 1 -race -coverprofile=$CURRENT/coverage.txt -covermode=atomic
+# Change to the root directory of the project
+cd "$(dirname "$0")/.."
+PROJECT_ROOT=$(pwd)
+
+function run_tests {
+    echo "Running tests with coverage..."
+    go test -v $(go list ./... | grep -v vendor) --count 1 -race \
+      -coverprofile="${PROJECT_ROOT}/coverage.txt" -covermode=atomic
 }
 
-function test_with_circleci
-{
+function run_tests_ci {
+    echo "Running tests in CI environment..."
     export CIRCLECI="true"
-    go test -v $(go list ./... | grep -v vendor) --count 1 -race -coverprofile=$CURRENT/coverage.txt -covermode=atomic
+    run_tests
 }
 
-function release
-{
-  sudo rm -rf $CURRENT/dist
-  sudo rm -rf $CURRENT/gopath
-  export GOPATH=$CURRENT/gopath
+function perform_release {
+    tag=$1
+    if [ -z "$tag" ]; then
+        echo "Error: Missing tag name. Usage: $0 release <tag>"
+        exit 1
+    fi
 
-  tag=$1
-  if [ -z "$tag" ]
-  then
-     echo "not found tag name"
-     exit 1
-  fi
+    echo "Creating and pushing tag: $tag"
+    git tag -a "$tag" -m "Release $tag"
+    git push origin "$tag"
 
-  git tag -a $tag -m "Add $tag"
-  git push origin $tag
+    echo "Cleaning previous release artifacts"
+    rm -rf "${PROJECT_ROOT}/dist"
 
-  goreleaser release --rm-dist
+    echo "Running goreleaser"
+    goreleaser release --rm-dist
 }
 
-function release_test
-{
-  sudo rm -rf $CURRENT/dist
-  sudo rm -rf $CURRENT/gopath
-  export GOPATH=$CURRENT/gopath
-  goreleaser release --snapshot --rm-dist
+function test_release {
+    echo "Cleaning previous release artifacts"
+    rm -rf "${PROJECT_ROOT}/dist"
+
+    echo "Running goreleaser in snapshot mode"
+    goreleaser release --snapshot --clean
 }
 
-CMD=$1
+# Execute the specified command
+cmd=$1
 shift
-$CMD $*
+case "$cmd" in
+    test)
+        run_tests "$@"
+        ;;
+    test_ci)
+        run_tests_ci "$@"
+        ;;
+    release)
+        perform_release "$@"
+        ;;
+    release_test)
+        test_release "$@"
+        ;;
+    *)
+        echo "Unknown command: $cmd"
+        echo "Available commands: test, test_ci, release, release_test"
+        exit 1
+        ;;
+esac
