@@ -32,7 +32,7 @@ function perform_release {
     rm -rf "${PROJECT_ROOT}/dist"
 
     echo "Running goreleaser"
-    goreleaser release --rm-dist
+    goreleaser release --clean
 }
 
 function test_release {
