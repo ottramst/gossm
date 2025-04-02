@@ -21,7 +21,7 @@ Because AWS Systems Manger Session Manager is using ssh protocol tunneling.
 <br/>
 **Additionally Features**
 - `mfa` command has added. this command is to authenticate through AWS MFA, and then to save issued a temporary credentials in $HOME/.aws/credentials_mfa. (default expired time is after 6 hours)  
-You should export global environment, such as `export AWS_SHARED_CREDENTIALS_FILE=$HOME/.aws/credentials_mfa`.    
+You should export global environment, such as `export AWS_SHAREDcredentialS_FILE=$HOME/.aws/credentials_mfa`.    
 With completed, you can execute AWS CLI and gossm conveniently without mfa authenticated.    
 Refer to detail information below.
    
@@ -125,7 +125,7 @@ If not specified, you will be prompted to enter a remote and local port after se
 ```bash
 $ gossm mfa <your-mfa-code>
 ```
-**Must set to `export AWS_SHARED_CREDENTIALS_FILE=$HOME/.aws/credentials_mfa` in .bash_profile, .zshrc.**
+**Must set to `export AWS_SHAREDcredentialS_FILE=$HOME/.aws/credentials_mfa` in .bash_profile, .zshrc.**
 
 **ex)**  
 <p align="center">

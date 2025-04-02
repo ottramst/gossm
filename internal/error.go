@@ -9,26 +9,31 @@ import (
 	"github.com/gjbae1212/go-wraperror"
 )
 
+// Common error types for the application
 var (
-	// ErrInvalidParams is an error type to use when passed arguments are invalid.
-	ErrInvalidParams = errors.New("[err] invalid params")
-	// ErrUnknown is an error type to use when error reason doesn't know.
-	ErrUnknown = errors.New("[err] unknown")
+	// ErrInvalidParams is returned when function arguments are invalid
+	ErrInvalidParams = errors.New("invalid parameters")
+
+	// ErrUnknown is returned when the error reason cannot be determined
+	ErrUnknown = errors.New("unknown error")
 )
 
-// WrapError wraps error.
+// WrapError wraps an error with file and line information for better debugging
+// If the input error is nil, nil is returned
 func WrapError(err error) error {
-	if err != nil {
-		// Get program counter and line number
-		pc, _, line, _ := runtime.Caller(1)
-		// Get function name from program counter
-		fn := runtime.FuncForPC(pc).Name()
-		// Refine function name
-		details := strings.Split(fn, "/")
-		fn = details[len(details)-1]
-		// Build chain
-		chainErr := wraperror.Error(err)
-		return chainErr.Wrap(fmt.Errorf("[err][%s:%d]", fn, line))
+	if err == nil {
+		return nil
 	}
-	return nil
+
+	// Get caller information
+	pc, _, line, _ := runtime.Caller(1)
+
+	// Extract function name
+	fullFuncName := runtime.FuncForPC(pc).Name()
+	funcNameParts := strings.Split(fullFuncName, "/")
+	funcName := funcNameParts[len(funcNameParts)-1]
+
+	// Create wrapped error with function name and line number
+	chainErr := wraperror.Error(err)
+	return chainErr.Wrap(fmt.Errorf("%s:%d", funcName, line))
 }

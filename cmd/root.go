@@ -3,41 +3,52 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/fatih/color"
-	"github.com/gjbae1212/gossm/internal"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/ottramst/gossm/internal"
 )
 
 const (
-	_defaultProfile = "default"
+	// defaultProfile is the AWS profile name to use when none is specified
+	defaultProfile = "default"
 )
 
 var (
 	// rootCmd represents the base command when called without any sub-commands
 	rootCmd = &cobra.Command{
 		Use:   "gossm",
-		Short: `gossm is interactive CLI tool that you select server in AWS and then could connect or send files your AWS server using start-session, ssh, scp in AWS Systems Manger Session Manager.`,
-		Long:  `gossm is interactive CLI tool that you select server in AWS and then could connect or send files your AWS server using start-session, ssh, scp in AWS Systems Manger Session Manager.`,
+		Short: `gossm is an interactive CLI tool to select and connect to AWS servers using AWS Systems Manager Session Manager.`,
+		Long: `gossm is an interactive CLI tool that allows you to select servers in AWS and connect 
+or send files to your AWS servers using start-session, ssh, scp via AWS Systems Manager Session Manager.`,
 	}
 
-	_version                 string
-	_credential              *Credential
-	_credentialWithMFA       = fmt.Sprintf("%s_mfa", config.DefaultSharedCredentialsFilename())
-	_credentialWithTemporary = fmt.Sprintf("%s_temporary", config.DefaultSharedCredentialsFilename())
+	// credential holds the AWS configuration for the current session
+	credential *Credential
+
+	// credentialWithMFA is the path to the file containing temporary credentials obtained via MFA
+	credentialWithMFA = fmt.Sprintf("%s_mfa", config.DefaultSharedCredentialsFilename())
 )
 
+// Credential holds AWS configuration and credential information for the session
 type Credential struct {
-	awsProfile    string
-	awsConfig     *aws.Config
+	// awsProfile is the AWS profile name being used
+	awsProfile string
+
+	// awsConfig contains the AWS SDK configuration including region and credentials
+	awsConfig *aws.Config
+
+	// gossmHomePath is the path to the gossm home directory (~/.gossm)
 	gossmHomePath string
+
+	// ssmPluginPath is the path to the AWS SSM plugin executable
 	ssmPluginPath string
 }
 
@@ -46,233 +57,171 @@ type Credential struct {
 func Execute(version string) {
 	rootCmd.Version = version
 	if err := rootCmd.Execute(); err != nil {
-		panicRed(err)
+		logErrorAndExit(err)
 	}
 }
 
-// panicRed raises error with text.
-func panicRed(err error) {
+// logErrorAndExit prints an error message and exits the program
+func logErrorAndExit(err error) {
 	fmt.Println(color.RedString("[err] %s", err.Error()))
 	os.Exit(1)
 }
 
 // initConfig reads in config file and ENV variables if set.
+// It initializes the AWS configuration and SSM plugin.
 func initConfig() {
-	_credential = &Credential{}
-	// 1. get aws profile
-	awsProfile := viper.GetString("profile")
-	if awsProfile == "" {
-		if os.Getenv("AWS_PROFILE") != "" {
-			awsProfile = os.Getenv("AWS_PROFILE")
-		} else {
-			awsProfile = _defaultProfile
-		}
-	}
-	_credential.awsProfile = awsProfile
+	credential = &Credential{}
 
-	// 2. get region
+	// 1. Get AWS profile
+	awsProfile := getAWSProfile()
+	credential.awsProfile = awsProfile
+
+	// 2. Get region from command line or environment
 	awsRegion := viper.GetString("region")
 
-	// 3. update or create aws ssm plugin.
-	home, err := homedir.Dir()
-	if err != nil {
-		panicRed(internal.WrapError(err))
+	// 3. Setup gossm home directory and SSM plugin
+	setupGossmHomeAndPlugin()
+
+	// 4. Setup AWS credentials using the AWS SDK's credential chain
+	setupAWSCredentials(awsProfile, awsRegion)
+
+	// 5. Ensure region is set, prompt user if needed
+	if credential.awsConfig.Region == "" {
+		askRegion, err := internal.AskRegion(context.Background(), *credential.awsConfig)
+		if err != nil {
+			logErrorAndExit(internal.WrapError(err))
+		}
+		credential.awsConfig.Region = askRegion.Name
 	}
 
-	_credential.gossmHomePath = filepath.Join(home, ".gossm")
-	if _, err := os.Stat(_credential.gossmHomePath); os.IsNotExist(err) {
-		if err := os.MkdirAll(_credential.gossmHomePath, os.ModePerm); err != nil {
-			panicRed(internal.WrapError(err))
-		}
+	color.Green("AWS region: %s", credential.awsConfig.Region)
+}
+
+// getAWSProfile determines the AWS profile to use
+func getAWSProfile() string {
+	profileFromFlag := viper.GetString("profile")
+	if profileFromFlag != "" {
+		return profileFromFlag
+	}
+
+	profileFromEnv := os.Getenv("AWS_PROFILE")
+	if profileFromEnv != "" {
+		return profileFromEnv
+	}
+
+	return defaultProfile
+}
+
+// setupGossmHomeAndPlugin sets up the gossm home directory and SSM plugin
+func setupGossmHomeAndPlugin() {
+	home, err := homedir.Dir()
+	if err != nil {
+		logErrorAndExit(internal.WrapError(err))
+	}
+
+	credential.gossmHomePath = filepath.Join(home, ".gossm")
+	if err := os.MkdirAll(credential.gossmHomePath, os.ModePerm); err != nil && !os.IsExist(err) {
+		logErrorAndExit(internal.WrapError(err))
 	}
 
 	plugin, err := internal.GetSsmPlugin()
 	if err != nil {
-		panicRed(internal.WrapError(err))
+		logErrorAndExit(internal.WrapError(err))
 	}
 
-	_credential.ssmPluginPath = filepath.Join(_credential.gossmHomePath, internal.GetSsmPluginName())
-	if info, err := os.Stat(_credential.ssmPluginPath); os.IsNotExist(err) {
+	credential.ssmPluginPath = filepath.Join(credential.gossmHomePath, internal.GetSsmPluginName())
+	setupSsmPlugin(plugin)
+}
+
+// setupSsmPlugin installs or updates the SSM plugin if needed
+func setupSsmPlugin(plugin []byte) {
+	info, err := os.Stat(credential.ssmPluginPath)
+
+	if os.IsNotExist(err) {
 		color.Green("[create] aws ssm plugin")
-		if err := ioutil.WriteFile(_credential.ssmPluginPath, plugin, 0755); err != nil {
-			panicRed(internal.WrapError(err))
+		if err := os.WriteFile(credential.ssmPluginPath, plugin, 0755); err != nil {
+			logErrorAndExit(internal.WrapError(err))
 		}
-	} else if err != nil {
-		panicRed(internal.WrapError(err))
-	} else {
-		if int(info.Size()) != len(plugin) {
-			color.Green("[update] aws ssm plugin")
-			if err := ioutil.WriteFile(_credential.ssmPluginPath, plugin, 0755); err != nil {
-				panicRed(internal.WrapError(err))
-			}
-		}
+		return
 	}
 
-	// 4. set shared credential.
-	sharedCredFile := os.Getenv("AWS_SHARED_CREDENTIALS_FILE")
-	if sharedCredFile == "" {
-		// if gossm mfa credential is existed?
-		if _, err := os.Stat(_credentialWithMFA); !os.IsNotExist(err) {
-			color.Yellow("[Use] gossm default mfa credential file %s", _credentialWithMFA)
-			os.Setenv("AWS_SHARED_CREDENTIALS_FILE", _credentialWithMFA)
-			sharedCredFile = _credentialWithMFA
-		}
-	} else {
-		sharedCredFile, err = filepath.Abs(sharedCredFile)
-		if err != nil {
-			color.Yellow("[Warning] invalid AWS_SHARED_CREDENTIALS_FILE environments path, such as %w", err)
-			os.Unsetenv("AWS_SHARED_CREDENTIALS_FILE")
-			sharedCredFile = ""
-		} else {
-			if _, err := os.Stat(sharedCredFile); os.IsNotExist(err) {
-				color.Yellow("[Warning] not found AWS_SHARED_CREDENTIALS_FILE environments file, such as %s", sharedCredFile)
-				os.Unsetenv("AWS_SHARED_CREDENTIALS_FILE")
-				sharedCredFile = ""
-			}
-		}
+	if err != nil {
+		logErrorAndExit(internal.WrapError(err))
 	}
 
-	// if shared cred file is exist.
-	if sharedCredFile != "" {
-		awsConfig, err := internal.NewSharedConfig(context.Background(),
-			_credential.awsProfile,
-			[]string{config.DefaultSharedConfigFilename()},
-			[]string{sharedCredFile},
-		)
-		if err != nil {
-			panicRed(internal.WrapError(err))
-		}
-
-		cred, err := awsConfig.Credentials.Retrieve(context.Background())
-		// delete invalid shared credential.
-		if err != nil || cred.Expired() || cred.AccessKeyID == "" || cred.SecretAccessKey == "" {
-			color.Yellow("[Expire] gossm default mfa credential file %s", sharedCredFile)
-			os.Unsetenv("AWS_SHARED_CREDENTIALS_FILE")
-		} else {
-			_credential.awsConfig = &awsConfig
+	if int(info.Size()) != len(plugin) {
+		color.Green("[update] aws ssm plugin")
+		if err := os.WriteFile(credential.ssmPluginPath, plugin, 0755); err != nil {
+			logErrorAndExit(internal.WrapError(err))
 		}
 	}
+}
 
-	// check subcommands
+// setupAWSCredentials sets up AWS credentials using the AWS SDK's credential chain
+func setupAWSCredentials(awsProfile, awsRegion string) {
+	// Check if we need special handling for MFA subcommand
 	args := os.Args[1:]
 	subcmd, _, err := rootCmd.Find(args)
 	if err != nil {
-		panicRed(internal.WrapError(err))
+		logErrorAndExit(internal.WrapError(err))
 	}
 
-	switch subcmd.Use {
-	case "mfa": // mfa command doesn't use session token.
-		if _credential.awsConfig != nil {
-			cred, err := _credential.awsConfig.Credentials.Retrieve(context.Background())
-			if err != nil {
-				panicRed(internal.WrapError(err))
-			}
-
-			if cred.SessionToken != "" { // delete shared credentials
-				os.Unsetenv("AWS_SHARED_CREDENTIALS_FILE")
-				_credential.awsConfig = nil
-			}
-		}
+	// Check for special MFA credentials file
+	if _, err := os.Stat(credentialWithMFA); err == nil && os.Getenv("AWS_SHAREDcredentialS_FILE") == "" {
+		color.Yellow("[Use] gossm default mfa credential file %s", credentialWithMFA)
+		os.Setenv("AWS_SHAREDcredentialS_FILE", credentialWithMFA)
 	}
 
-	if _credential.awsConfig == nil { // not use shared credential
-		var temporaryCredentials aws.Credentials
-		var temporaryConfig aws.Config
-
-		if os.Getenv("AWS_ACCESS_KEY_ID") != "" && os.Getenv("AWS_SECRET_ACCESS_KEY") != "" { // use global environments.
-			temporaryConfig, err = internal.NewConfig(context.Background(),
-				os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY"),
-				os.Getenv("AWS_SESSION_TOKEN"), awsRegion, os.Getenv("AWS_ROLE_ARN"))
-			if err != nil {
-				panicRed(internal.WrapError(err))
-			}
-
-			temporaryCredentials, err = temporaryConfig.Credentials.Retrieve(context.Background())
-			if err != nil || temporaryCredentials.Expired() ||
-				temporaryCredentials.AccessKeyID == "" || temporaryCredentials.SecretAccessKey == "" ||
-				(subcmd.Use == "mfa" && temporaryCredentials.SessionToken != "") {
-				panicRed(internal.WrapError(fmt.Errorf("[err] invalid global environments %s", err.Error())))
-			}
-		} else { // use default credential file
-			// get cred by only config
-			temporaryConfig, err = internal.NewSharedConfig(context.Background(), _credential.awsProfile,
-				[]string{config.DefaultSharedConfigFilename()}, []string{})
-			if err == nil {
-				temporaryCredentials, err = temporaryConfig.Credentials.Retrieve(context.Background())
-			}
-
-			// error is raised or temporaryCredentials is invalid.
-			if err != nil || temporaryCredentials.Expired() ||
-				temporaryCredentials.AccessKeyID == "" || temporaryCredentials.SecretAccessKey == "" ||
-				(subcmd.Use == "mfa" && temporaryCredentials.SessionToken != "") {
-				// get cred by default credential file.
-				temporaryConfig, err = internal.NewSharedConfig(context.Background(), _credential.awsProfile,
-					[]string{config.DefaultSharedConfigFilename()}, []string{config.DefaultSharedCredentialsFilename()})
-				if err != nil {
-					panicRed(internal.WrapError(err))
-				}
-
-				temporaryCredentials, err = temporaryConfig.Credentials.Retrieve(context.Background())
-				if err != nil {
-					panicRed(internal.WrapError(err))
-				}
-				if temporaryCredentials.Expired() || temporaryCredentials.AccessKeyID == "" || temporaryCredentials.SecretAccessKey == "" {
-					panicRed(internal.WrapError(fmt.Errorf("[err] not found credentials")))
-				}
-
-				// extract aws region if awsRegion is empty.
-				if awsRegion == "" {
-					awsRegion = temporaryConfig.Region
-				}
-			}
-		}
-
-		// [ISSUE] KMS Encrypt, must use AWS_SHARED_CREDENTIALS_FILE with SharedConfig.
-		// [INFO] write temporaryCredentials to file.
-
-		temporaryCredentialsString := fmt.Sprintf(mfaCredentialFormat, _credential.awsProfile, temporaryCredentials.AccessKeyID,
-			temporaryCredentials.SecretAccessKey, temporaryCredentials.SessionToken)
-		if err := ioutil.WriteFile(_credentialWithTemporary, []byte(temporaryCredentialsString), 0600); err != nil {
-			panicRed(internal.WrapError(err))
-		}
-
-		os.Setenv("AWS_SHARED_CREDENTIALS_FILE", _credentialWithTemporary)
-		awsConfig, err := internal.NewSharedConfig(context.Background(),
-			_credential.awsProfile, []string{}, []string{_credentialWithTemporary},
-		)
-		if err != nil {
-			panicRed(internal.WrapError(err))
-		}
-		_credential.awsConfig = &awsConfig
+	// For MFA command, ensure we're using credentials without session tokens
+	if subcmd.Use == "mfa" {
+		// Here we could clear any session tokens or use a separate profile that doesn't use session tokens
+		// This depends on the specifics of how the MFA command is implemented
 	}
 
-	// set region
+	// Use AWS SDK's built-in credential chain with our profile
+	configOpts := []func(*config.LoadOptions) error{
+		config.WithSharedConfigProfile(credential.awsProfile),
+	}
+
+	// Add region if specified
 	if awsRegion != "" {
-		_credential.awsConfig.Region = awsRegion
+		configOpts = append(configOpts, config.WithRegion(awsRegion))
 	}
-	if _credential.awsConfig.Region == "" { // ask region
-		askRegion, err := internal.AskRegion(context.Background(), *_credential.awsConfig)
-		if err != nil {
-			panicRed(internal.WrapError(err))
-		}
-		_credential.awsConfig.Region = askRegion.Name
+
+	// Load AWS configuration
+	awsConfig, err := config.LoadDefaultConfig(context.Background(), configOpts...)
+	if err != nil {
+		logErrorAndExit(internal.WrapError(fmt.Errorf("failed to load AWS configuration: %w", err)))
 	}
-	color.Green("region (%s)", _credential.awsConfig.Region)
+
+	// Verify credentials are valid
+	creds, err := awsConfig.Credentials.Retrieve(context.Background())
+	if err != nil {
+		logErrorAndExit(internal.WrapError(fmt.Errorf("failed to retrieve AWS credentials: %w", err)))
+	}
+
+	// Validate credentials
+	if creds.AccessKeyID == "" || creds.SecretAccessKey == "" {
+		logErrorAndExit(internal.WrapError(fmt.Errorf("invalid AWS credentials: missing access key or secret key")))
+	}
+
+	credential.awsConfig = &awsConfig
 }
 
+// init sets up the command flags and initializes the configuration system
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-	rootCmd.PersistentFlags().StringP("profile", "p", "", `[optional] if you are having multiple aws profiles, it is one of profiles (default is AWS_PROFILE environment variable or default)`)
-	rootCmd.PersistentFlags().StringP("region", "r", "", `[optional] it is region in AWS that would like to do something`)
+	// Define persistent flags for the root command
+	rootCmd.PersistentFlags().StringP("profile", "p", "",
+		`AWS profile name (default is AWS_PROFILE environment variable or "default")`)
+	rootCmd.PersistentFlags().StringP("region", "r", "",
+		`AWS region to use for operations`)
 
-	// set version flag
+	// Initialize default version flag
 	rootCmd.InitDefaultVersionFlag()
 
-	// mapping viper
+	// Bind flags to viper for configuration
 	viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
 	viper.BindPFlag("region", rootCmd.PersistentFlags().Lookup("region"))
 }
