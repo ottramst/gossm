@@ -26,6 +26,9 @@ var (
 This command allows you to establish SSH connections without requiring inbound ports to be open
 or public IP addresses to be assigned to the instances.
 
+Escape Sequence:
+  Enter ~.   Disconnect from the session (useful when network is stuck)
+
 Examples:
   gossm ssh                               # Interactive instance and user selection
   gossm ssh -i ~/.ssh/mykey.pem           # Use a specific identity file (interactive instance selection)

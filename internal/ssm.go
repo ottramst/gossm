@@ -635,8 +635,14 @@ func PrintReady(cmd, region, target string) {
 		color.YellowString(target))
 }
 
-// CallProcess executes an external process with the given arguments
+// CallProcess executes an external process with escape sequence support for interactive sessions
 func CallProcess(process string, args ...string) error {
+	// Use simple escape sequence handler for interactive sessions
+	return CallProcessWithSimpleEscape(process, args...)
+}
+
+// CallProcessDirect executes an external process without escape sequence handling
+func CallProcessDirect(process string, args ...string) error {
 	// Create command
 	cmd := exec.Command(process, args...)
 	cmd.Stderr = os.Stderr
