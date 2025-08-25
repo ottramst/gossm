@@ -2,6 +2,8 @@ package internal
 
 import (
 	"archive/tar"
+	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"embed"
@@ -119,9 +121,17 @@ func GetPluginDirectory() string {
 
 // getEmbeddedPlugin extracts the plugin from embedded assets
 func getEmbeddedPlugin(pluginDir string) ([]byte, error) {
+	goos := strings.ToLower(runtime.GOOS)
+	goarch := strings.ToLower(runtime.GOARCH)
+	
+	// Windows ARM64 uses the AMD64 binary (via emulation)
+	if goos == "windows" && goarch == "arm64" {
+		goarch = "amd64"
+	}
+	
 	pluginKey := fmt.Sprintf("plugin/%s_%s/%s",
-		strings.ToLower(runtime.GOOS),
-		strings.ToLower(runtime.GOARCH),
+		goos,
+		goarch,
 		GetSsmPluginName())
 
 	data, err := assets.ReadFile("assets/" + pluginKey)
@@ -274,8 +284,9 @@ func getDownloadInfoForPlatform(version string) (string, func(string, string) (s
 			version, awsArch)
 		return url, extractFromPkg, nil
 	case "windows":
-		url := fmt.Sprintf("https://s3.amazonaws.com/session-manager-downloads/plugin/%s/windows_%s/session-manager-plugin.zip",
-			version, awsArch)
+		// Windows uses a different URL pattern - no architecture in path
+		url := fmt.Sprintf("https://s3.amazonaws.com/session-manager-downloads/plugin/%s/windows/SessionManagerPlugin.zip",
+			version)
 		return url, extractFromZip, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported platform: %s_%s", goos, goarch)
@@ -480,11 +491,115 @@ func extractFromPkg(pkgPath, destDir string) (string, error) {
 }
 
 // extractFromZip extracts the plugin binary from a Windows .zip package
-// This is simplified and would need expansion for production use
 func extractFromZip(zipPath, destDir string) (string, error) {
-	// For a complete solution, you'd need to use a zip package like "archive/zip"
-	// TODO
-	return "", fmt.Errorf("windows .zip extraction not fully implemented")
+	// Open the zip file
+	reader, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open zip file: %w", err)
+	}
+	defer reader.Close()
+
+	destPath := filepath.Join(destDir, GetSsmPluginName())
+	
+	// Check if this is a nested zip (contains package.zip)
+	var packageZip *zip.File
+	for _, file := range reader.File {
+		if file.Name == "package.zip" {
+			packageZip = file
+			break
+		}
+	}
+	
+	// If we found package.zip, extract from it
+	if packageZip != nil {
+		// Open the nested package.zip
+		rc, err := packageZip.Open()
+		if err != nil {
+			return "", fmt.Errorf("failed to open package.zip: %w", err)
+		}
+		defer rc.Close()
+		
+		// Read the entire nested zip into memory
+		nestedData, err := io.ReadAll(rc)
+		if err != nil {
+			return "", fmt.Errorf("failed to read package.zip: %w", err)
+		}
+		
+		// Create a reader for the nested zip
+		nestedReader, err := zip.NewReader(bytes.NewReader(nestedData), int64(len(nestedData)))
+		if err != nil {
+			return "", fmt.Errorf("failed to open nested zip: %w", err)
+		}
+		
+		// Look for the binary in the nested zip
+		for _, file := range nestedReader.File {
+			// Look for various possible locations
+			if file.Name == "bin/session-manager-plugin.exe" ||
+			   file.Name == "session-manager-plugin.exe" ||
+			   strings.HasSuffix(file.Name, "/session-manager-plugin.exe") {
+				
+				// Extract the binary
+				rc, err := file.Open()
+				if err != nil {
+					return "", fmt.Errorf("failed to open file in nested zip: %w", err)
+				}
+				defer rc.Close()
+				
+				out, err := os.Create(destPath)
+				if err != nil {
+					return "", fmt.Errorf("failed to create destination file: %w", err)
+				}
+				defer out.Close()
+				
+				if _, err := io.Copy(out, rc); err != nil {
+					return "", fmt.Errorf("failed to extract file: %w", err)
+				}
+				
+				return destPath, nil
+			}
+		}
+		
+		// Debug: list files in nested zip
+		var nestedFiles []string
+		for _, file := range nestedReader.File {
+			nestedFiles = append(nestedFiles, file.Name)
+		}
+		return "", fmt.Errorf("session-manager-plugin.exe not found in package.zip. Found files: %v", nestedFiles)
+	}
+	
+	// Fallback: look in the main zip
+	for _, file := range reader.File {
+		if file.Name == "session-manager-plugin.exe" || 
+		   strings.HasSuffix(file.Name, "/session-manager-plugin.exe") ||
+		   strings.HasSuffix(file.Name, "\\session-manager-plugin.exe") {
+			
+			rc, err := file.Open()
+			if err != nil {
+				return "", fmt.Errorf("failed to open file in zip: %w", err)
+			}
+			defer rc.Close()
+
+			out, err := os.Create(destPath)
+			if err != nil {
+				return "", fmt.Errorf("failed to create destination file: %w", err)
+			}
+			defer out.Close()
+
+			if _, err := io.Copy(out, rc); err != nil {
+				return "", fmt.Errorf("failed to extract file: %w", err)
+			}
+
+			return destPath, nil
+		}
+	}
+
+	// If we didn't find the expected file, list what we did find for debugging
+	var foundFiles []string
+	for _, file := range reader.File {
+		foundFiles = append(foundFiles, file.Name)
+	}
+	
+	return "", fmt.Errorf("session-manager-plugin.exe not found in zip. Found files: %v", foundFiles)
 }
 
 // getLatestVersion fetches the latest available plugin version
