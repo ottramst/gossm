@@ -35,6 +35,9 @@ through AWS Systems Manager Session Manager.
 This command establishes an SCP connection through SSM, allowing secure file
 transfers without requiring direct SSH access to the instance.
 
+Escape Sequence:
+  Enter ~.   Disconnect from the session (useful when network is stuck)
+
 Example:
   gossm scp --exec "-i key.pem file.txt ec2-user@instance:/home/ec2-user/"
 `,

@@ -24,6 +24,9 @@ var (
 This command establishes a secure session with an EC2 instance without requiring SSH access or
 opening inbound ports. It uses the AWS SSM agent running on the target instance.
 
+Escape Sequence:
+  Enter ~.   Disconnect from the session (useful when network is stuck)
+
 Example:
   gossm start              # Interactive instance selection
   gossm start -t i-1234    # Connect to a specific instance ID

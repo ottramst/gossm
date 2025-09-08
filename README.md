@@ -72,6 +72,14 @@ If no region is specified, you can select one through the interactive CLI.
 
 ### Commands
 
+#### Escape Sequence
+
+When in an interactive session (start, ssh, or scp), you can use the following escape sequence:
+
+- **Enter** followed by `~.` - Disconnect from the session (useful when network connection is stuck)
+
+This works the same way as the standard SSH escape sequence and provides a way to terminate sessions when network connectivity is lost. The tilde character (`~`) is only special when typed immediately after pressing Enter. Using `~` anywhere else (like `~/` for home directory or `~username`) works normally.
+
 #### `start`
 
 Start an interactive terminal session with an EC2 instance.
