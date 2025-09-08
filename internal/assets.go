@@ -471,12 +471,97 @@ func extractFromRpm(rpmPath, destDir string) (string, error) {
 }
 
 // extractFromPkg extracts the plugin binary from a Mac .pkg package
-// This is simplified and would need expansion for production use
 func extractFromPkg(pkgPath, destDir string) (string, error) {
-	// Mac packages are complex, so for simplicity, we'll suggest downloading directly
-	// For a complete solution, you'd need a tool like pkgutil
-	// TODO
-	return "", fmt.Errorf("mac .pkg extraction not fully implemented - use 'installer -pkg %s -target /'", pkgPath)
+	// Create a temporary directory for extraction
+	tempDir, err := os.MkdirTemp("", "ssm-plugin-extract-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Use pkgutil to expand the package
+	// First try --expand-full for newer macOS versions
+	cmd := exec.Command("pkgutil", "--expand-full", pkgPath, filepath.Join(tempDir, "expanded"))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// If --expand-full fails (older macOS), try regular --expand
+		cmd = exec.Command("pkgutil", "--expand", pkgPath, filepath.Join(tempDir, "expanded"))
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("failed to expand pkg: %w, output: %s", err, string(output))
+		}
+		// For regular expand, we need to extract the payload
+		payloadPath := filepath.Join(tempDir, "expanded", "sessionmanagerplugin.pkg", "Payload")
+		if _, err := os.Stat(payloadPath); err == nil {
+			// Extract the payload using cpio
+			cmd = exec.Command("sh", "-c", fmt.Sprintf("cd %s && cat %s | gzip -d | cpio -id", tempDir, payloadPath))
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				return "", fmt.Errorf("failed to extract payload: %w, output: %s", err, string(output))
+			}
+		}
+	}
+	
+	// Update base directory for searching
+	searchDir := filepath.Join(tempDir, "expanded")
+
+	// Look for the plugin binary in the extracted content
+	// The binary is typically in Payload/usr/local/sessionmanagerplugin/bin/
+	possiblePaths := []string{
+		filepath.Join(searchDir, "Payload", "usr", "local", "sessionmanagerplugin", "bin", "session-manager-plugin"),
+		filepath.Join(searchDir, "sessionmanagerplugin.pkg", "Payload", "usr", "local", "sessionmanagerplugin", "bin", "session-manager-plugin"),
+		// Alternative paths based on different package structures
+		filepath.Join(searchDir, "Payload", "usr", "local", "bin", "session-manager-plugin"),
+		filepath.Join(searchDir, "sessionmanagerplugin.pkg", "Payload", "usr", "local", "bin", "session-manager-plugin"),
+		// Paths for when we extract payload with cpio
+		filepath.Join(tempDir, "usr", "local", "sessionmanagerplugin", "bin", "session-manager-plugin"),
+		filepath.Join(tempDir, "usr", "local", "bin", "session-manager-plugin"),
+	}
+
+	var pluginPath string
+	for _, path := range possiblePaths {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			pluginPath = path
+			break
+		}
+	}
+
+	if pluginPath == "" {
+		// If not found, try to find it recursively
+		err := filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil // Skip errors
+			}
+			if !info.IsDir() && info.Name() == "session-manager-plugin" {
+				pluginPath = path
+				return filepath.SkipAll
+			}
+			return nil
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to search for plugin: %w", err)
+		}
+	}
+
+	if pluginPath == "" {
+		return "", fmt.Errorf("session-manager-plugin not found in package")
+	}
+
+	// Copy the plugin to the destination directory
+	destPath := filepath.Join(destDir, "session-manager-plugin")
+	
+	// Read the plugin file
+	pluginData, err := os.ReadFile(pluginPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read plugin: %w", err)
+	}
+
+	// Write to destination with executable permissions
+	if err := os.WriteFile(destPath, pluginData, 0755); err != nil {
+		return "", fmt.Errorf("failed to write plugin to destination: %w", err)
+	}
+
+	return destPath, nil
 }
 
 // extractFromZip extracts the plugin binary from a Windows .zip package
