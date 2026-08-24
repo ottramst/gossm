@@ -57,6 +57,18 @@ Homebrew is not supported yet.
 
 Download the latest release from the [releases page](https://github.com/ottramst/gossm/releases).
 
+### Container
+
+Multi-arch images (linux/amd64, linux/arm64) are published to GHCR on every release:
+
+```sh
+docker run --rm -it -v ~/.aws:/root/.aws ghcr.io/ottramst/gossm:latest start
+```
+
+AWS credentials must be provided to the container: mount `~/.aws` as shown, or pass
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_REGION` with `-e`. The `-it` flags are
+required for the interactive prompts and the session terminal.
+
 ## Usage
 
 ### Global Command Arguments

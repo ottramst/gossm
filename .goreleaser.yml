@@ -42,6 +42,24 @@ archives:
         formats: [zip]
 
 # Release notes are grouped by Conventional Commit type.
+dockers_v2:
+  - images:
+      - ghcr.io/ottramst/gossm
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.description: Interactive CLI for AWS SSM Session Manager
+      org.opencontainers.image.url: https://github.com/ottramst/gossm
+      org.opencontainers.image.source: https://github.com/ottramst/gossm
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: MIT
+
 changelog:
   sort: asc
   filters:
