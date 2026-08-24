@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/ottramst/gossm/internal"
 )
@@ -34,14 +33,18 @@ var (
 func runPortForwarding(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
+	flagTarget, _ := cmd.Flags().GetString("target")
+	flagRemote, _ := cmd.Flags().GetString("remote")
+	flagLocal, _ := cmd.Flags().GetString("local")
+
 	// Get target instance
-	target, err := getTargetInstance(ctx)
+	target, err := getTargetInstance(ctx, flagTarget)
 	if err != nil {
 		logErrorAndExit(err)
 	}
 
 	// Get port configuration
-	localPort, remotePort, err := GetPortConfiguration()
+	localPort, remotePort, err := portConfiguration(flagRemote, flagLocal)
 	if err != nil {
 		logErrorAndExit(err)
 	}
@@ -59,10 +62,10 @@ func runPortForwarding(cmd *cobra.Command, args []string) {
 	}
 }
 
-// getTargetInstance retrieves the target instance for port forwarding
-func getTargetInstance(ctx context.Context) (*internal.Target, error) {
-	// Check if target was specified via command line
-	argTarget := strings.TrimSpace(viper.GetString("fwd-target"))
+// getTargetInstance retrieves the target instance, using the given flag value
+// or prompting interactively when it is empty
+func getTargetInstance(ctx context.Context, flagTarget string) (*internal.Target, error) {
+	argTarget := strings.TrimSpace(flagTarget)
 	if argTarget != "" {
 		return findSpecificInstance(ctx, argTarget)
 	}
@@ -71,7 +74,7 @@ func getTargetInstance(ctx context.Context) (*internal.Target, error) {
 	return internal.AskTarget(ctx, *credential.awsConfig)
 }
 
-// findSpecificInstance looks for a specific instance by name
+// findSpecificInstance looks for a specific instance by ID
 func findSpecificInstance(ctx context.Context, targetName string) (*internal.Target, error) {
 	instances, err := internal.FindInstances(ctx, *credential.awsConfig)
 	if err != nil {
@@ -87,11 +90,11 @@ func findSpecificInstance(ctx context.Context, targetName string) (*internal.Tar
 	return nil, fmt.Errorf("target instance '%s' not found", targetName)
 }
 
-// GetPortConfiguration determines the local and remote ports for forwarding
-func GetPortConfiguration() (localPort, remotePort string, err error) {
-	// Check if ports were specified via command line
-	remotePort = strings.TrimSpace(viper.GetString("fwd-remote-port"))
-	localPort = strings.TrimSpace(viper.GetString("fwd-local-port"))
+// portConfiguration determines the local and remote ports for forwarding,
+// prompting interactively when the remote port flag is empty
+func portConfiguration(flagRemote, flagLocal string) (localPort, remotePort string, err error) {
+	remotePort = strings.TrimSpace(flagRemote)
+	localPort = strings.TrimSpace(flagLocal)
 
 	if remotePort == "" {
 		// If not specified, prompt user for ports
@@ -164,12 +167,7 @@ func init() {
 	// Define command flags
 	fwdCommand.Flags().StringP("remote", "z", "", "Remote port to forward to (e.g., 8080)")
 	fwdCommand.Flags().StringP("local", "l", "", "Local port to use (defaults to remote port if not specified)")
-	fwdCommand.Flags().StringP("target", "t", "", "Target EC2 instance name (will prompt if not specified)")
-
-	// Bind flags to viper
-	_ = viper.BindPFlag("fwd-remote-port", fwdCommand.Flags().Lookup("remote"))
-	_ = viper.BindPFlag("fwd-local-port", fwdCommand.Flags().Lookup("local"))
-	_ = viper.BindPFlag("fwd-target", fwdCommand.Flags().Lookup("target"))
+	fwdCommand.Flags().StringP("target", "t", "", "Target EC2 instance ID (will prompt if not specified)")
 
 	// Add command to root
 	rootCmd.AddCommand(fwdCommand)

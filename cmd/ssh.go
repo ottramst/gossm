@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/ottramst/gossm/internal"
 )
@@ -42,8 +41,11 @@ Examples:
 func runSSHCommand(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
+	flagExec, _ := cmd.Flags().GetString("exec")
+	flagIdentity, _ := cmd.Flags().GetString("identity")
+
 	// Get SSH command details and target instance
-	sshArgs, targetName, err := getSSHDetailsAndTarget(ctx)
+	sshArgs, targetName, err := getSSHDetailsAndTarget(ctx, flagExec, flagIdentity)
 	if err != nil {
 		logErrorAndExit(err)
 	}
@@ -70,10 +72,10 @@ func runSSHCommand(cmd *cobra.Command, args []string) {
 }
 
 // getSSHDetailsAndTarget determines the SSH command and target instance
-func getSSHDetailsAndTarget(ctx context.Context) (string, string, error) {
+func getSSHDetailsAndTarget(ctx context.Context, flagExec, flagIdentity string) (string, string, error) {
 	// Get SSH command arguments
-	execFlag := strings.TrimSpace(viper.GetString("ssh-exec"))
-	identityFlag := strings.TrimSpace(viper.GetString("ssh-identity"))
+	execFlag := strings.TrimSpace(flagExec)
+	identityFlag := strings.TrimSpace(flagIdentity)
 
 	// Validate flags - can't use both exec and identity
 	if execFlag != "" && identityFlag != "" {
@@ -196,10 +198,6 @@ func init() {
 	// Define command flags
 	sshCommand.Flags().StringP("exec", "e", "", "Complete SSH command (e.g., \"-i key.pem ec2-user@instance\")")
 	sshCommand.Flags().StringP("identity", "i", "", "SSH identity file path (e.g., ~/.ssh/id_rsa)")
-
-	// Bind flags to viper
-	_ = viper.BindPFlag("ssh-exec", sshCommand.Flags().Lookup("exec"))
-	_ = viper.BindPFlag("ssh-identity", sshCommand.Flags().Lookup("identity"))
 
 	// Add command to root
 	rootCmd.AddCommand(sshCommand)

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/ottramst/gossm/internal"
 )
@@ -49,10 +49,10 @@ func findSpecificTarget(ctx context.Context, targetName string) ([]*internal.Tar
 	return nil, fmt.Errorf("target instance '%s' not found", targetName)
 }
 
-// findTargetInstances identifies the instances to target for command execution
-func findTargetInstances(ctx context.Context) ([]*internal.Target, error) {
-	// Check if a specific target was specified
-	argTarget := strings.TrimSpace(viper.GetString("cmd-target"))
+// findTargetInstances identifies the instances to target for command
+// execution, using the given flag value or prompting when it is empty
+func findTargetInstances(ctx context.Context, flagTarget string) ([]*internal.Target, error) {
+	argTarget := strings.TrimSpace(flagTarget)
 	if argTarget != "" {
 		return findSpecificTarget(ctx, argTarget)
 	}
@@ -100,14 +100,17 @@ func displayCommandResults(ctx context.Context, sendOutput *ssm.SendCommandOutpu
 func runCommand(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
+	flagExec, _ := cmd.Flags().GetString("exec")
+	flagTarget, _ := cmd.Flags().GetString("target")
+
 	// Get the command to execute
-	execCommand := strings.TrimSpace(viper.GetString("cmd-exec"))
+	execCommand := strings.TrimSpace(flagExec)
 	if execCommand == "" {
-		logErrorAndExit(fmt.Errorf("command execution failed: no command specified"))
+		logErrorAndExit(errors.New("command execution failed: no command specified"))
 	}
 
 	// Find target instances
-	targets, err := findTargetInstances(ctx)
+	targets, err := findTargetInstances(ctx, flagTarget)
 	if err != nil {
 		logErrorAndExit(err)
 	}
@@ -128,14 +131,10 @@ func runCommand(cmd *cobra.Command, args []string) {
 func init() {
 	// Define command flags
 	cmdCommand.Flags().StringP("exec", "e", "", "Command to execute on the target instances (required)")
-	cmdCommand.Flags().StringP("target", "t", "", "Target EC2 instance name (optional, will prompt if not specified)")
+	cmdCommand.Flags().StringP("target", "t", "", "Target EC2 instance ID (optional, will prompt if not specified)")
 
 	// Mark required flags
 	_ = cmdCommand.MarkFlagRequired("exec")
-
-	// Bind flags to viper
-	_ = viper.BindPFlag("cmd-exec", cmdCommand.Flags().Lookup("exec"))
-	_ = viper.BindPFlag("cmd-target", cmdCommand.Flags().Lookup("target"))
 
 	// Add command to root
 	rootCmd.AddCommand(cmdCommand)
