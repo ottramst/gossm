@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/ottramst/gossm/internal"
 )
@@ -49,8 +49,10 @@ Example:
 func runSCPCommand(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
+	flagExec, _ := cmd.Flags().GetString("exec")
+
 	// Get and validate SCP command arguments
-	scpArgs, err := validateSCPArguments()
+	scpArgs, err := validateSCPArguments(flagExec)
 	if err != nil {
 		logErrorAndExit(err)
 	}
@@ -84,11 +86,11 @@ func runSCPCommand(cmd *cobra.Command, args []string) {
 }
 
 // validateSCPArguments validates and parses the SCP command arguments
-func validateSCPArguments() (string, error) {
-	scpArgs := strings.TrimSpace(viper.GetString("scp-exec"))
+func validateSCPArguments(flagExec string) (string, error) {
+	scpArgs := strings.TrimSpace(flagExec)
 
 	if scpArgs == "" {
-		return "", fmt.Errorf("SCP command arguments are required")
+		return "", errors.New("SCP command arguments are required")
 	}
 
 	// Basic validation of SCP arguments
@@ -223,9 +225,6 @@ func init() {
 	// Define command flags
 	scpCommand.Flags().StringP("exec", "e", "", "SCP command arguments (e.g., \"-r localfile user@instance:/remote/path\")")
 	_ = scpCommand.MarkFlagRequired("exec")
-
-	// Bind flags to viper
-	_ = viper.BindPFlag("scp-exec", scpCommand.Flags().Lookup("exec"))
 
 	// Add command to root
 	rootCmd.AddCommand(scpCommand)

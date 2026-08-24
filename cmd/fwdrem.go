@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/ottramst/gossm/internal"
 )
@@ -34,20 +33,25 @@ var (
 func runRemotePortForwarding(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
+	flagTarget, _ := cmd.Flags().GetString("target")
+	flagRemote, _ := cmd.Flags().GetString("remote")
+	flagLocal, _ := cmd.Flags().GetString("local")
+	flagHost, _ := cmd.Flags().GetString("host")
+
 	// Get target instance to proxy through
-	target, err := getProxyInstance(ctx)
+	target, err := getTargetInstance(ctx, flagTarget)
 	if err != nil {
 		logErrorAndExit(err)
 	}
 
 	// Get port configuration
-	localPort, remotePort, err := GetPortConfiguration()
+	localPort, remotePort, err := portConfiguration(flagRemote, flagLocal)
 	if err != nil {
 		logErrorAndExit(err)
 	}
 
 	// Get remote host to connect to
-	host, err := getRemoteHost()
+	host, err := getRemoteHost(flagHost)
 	if err != nil {
 		logErrorAndExit(err)
 	}
@@ -65,38 +69,10 @@ func runRemotePortForwarding(cmd *cobra.Command, args []string) {
 	}
 }
 
-// getProxyInstance retrieves the target instance to proxy through
-func getProxyInstance(ctx context.Context) (*internal.Target, error) {
-	// Check if target was specified via command line
-	argTarget := strings.TrimSpace(viper.GetString("fwd-target"))
-	if argTarget != "" {
-		return findSpecificProxyInstance(ctx, argTarget)
-	}
-
-	// If no target specified, prompt user to select
-	return internal.AskTarget(ctx, *credential.awsConfig)
-}
-
-// findSpecificProxyInstance looks for a specific instance by name
-func findSpecificProxyInstance(ctx context.Context, targetName string) (*internal.Target, error) {
-	instances, err := internal.FindInstances(ctx, *credential.awsConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find instances: %w", err)
-	}
-
-	for _, instance := range instances {
-		if instance.Name == targetName {
-			return instance, nil
-		}
-	}
-
-	return nil, fmt.Errorf("proxy instance '%s' not found", targetName)
-}
-
-// getRemoteHost determines the remote host to connect to
-func getRemoteHost() (string, error) {
-	// Check if host was specified via command line
-	host := strings.TrimSpace(viper.GetString("fwd-host"))
+// getRemoteHost determines the remote host to connect to, using the given
+// flag value or prompting interactively when it is empty
+func getRemoteHost(flagHost string) (string, error) {
+	host := strings.TrimSpace(flagHost)
 	if host != "" {
 		return host, nil
 	}
@@ -164,12 +140,6 @@ func init() {
 	fwdremCommand.Flags().StringP("local", "l", "", "Local port to use (defaults to remote port if not specified)")
 	fwdremCommand.Flags().StringP("target", "t", "", "AWS EC2 instance to proxy through (will prompt if not specified)")
 	fwdremCommand.Flags().StringP("host", "a", "", "Remote host address to connect to (e.g., internal-db)")
-
-	// Bind flags to viper
-	_ = viper.BindPFlag("fwd-remote-port", fwdremCommand.Flags().Lookup("remote"))
-	_ = viper.BindPFlag("fwd-local-port", fwdremCommand.Flags().Lookup("local"))
-	_ = viper.BindPFlag("fwd-target", fwdremCommand.Flags().Lookup("target"))
-	_ = viper.BindPFlag("fwd-host", fwdremCommand.Flags().Lookup("host"))
 
 	// Add command to root
 	rootCmd.AddCommand(fwdremCommand)

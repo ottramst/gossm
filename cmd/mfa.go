@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -56,17 +56,17 @@ func runMFAAuthentication(cmd *cobra.Command, args []string) {
 	// Get and validate the MFA code
 	code := strings.TrimSpace(args[0])
 	if code == "" {
-		logErrorAndExit(fmt.Errorf("invalid MFA code: code cannot be empty"))
+		logErrorAndExit(errors.New("invalid MFA code: code cannot be empty"))
 	}
 
+	flagDevice, _ := cmd.Flags().GetString("device")
+	duration, _ := cmd.Flags().GetInt32("deadline")
+
 	// Get MFA device identifier
-	device, err := getMFADevice(ctx)
+	device, err := getMFADevice(ctx, flagDevice)
 	if err != nil {
 		logErrorAndExit(err)
 	}
-
-	// Get session duration
-	duration := viper.GetInt32("mfa-deadline")
 
 	// Get temporary credentials using MFA
 	sessionToken, err := getTemporaryCredentials(ctx, device, code, duration)
@@ -84,9 +84,9 @@ func runMFAAuthentication(cmd *cobra.Command, args []string) {
 }
 
 // getMFADevice returns the MFA device ARN to use
-func getMFADevice(ctx context.Context) (string, error) {
+func getMFADevice(ctx context.Context, flagDevice string) (string, error) {
 	// Check if device was specified via command line
-	device := viper.GetString("mfa-device")
+	device := strings.TrimSpace(flagDevice)
 	if device != "" {
 		return device, nil
 	}
@@ -161,10 +161,6 @@ func init() {
 		"Duration in seconds for the temporary credentials (default: 6 hours)")
 	mfaCommand.Flags().StringP("device", "m", "",
 		"MFA device ARN (default: your virtual MFA device)")
-
-	// Bind flags to viper
-	_ = viper.BindPFlag("mfa-deadline", mfaCommand.Flags().Lookup("deadline"))
-	_ = viper.BindPFlag("mfa-device", mfaCommand.Flags().Lookup("device"))
 
 	// Add command to root
 	rootCmd.AddCommand(mfaCommand)

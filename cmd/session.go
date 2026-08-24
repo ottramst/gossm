@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/ottramst/gossm/internal"
 )
@@ -39,8 +38,10 @@ Example:
 func runStartSession(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
+	flagTarget, _ := cmd.Flags().GetString("target")
+
 	// Get target instance
-	target, err := getTargetInstance(ctx)
+	target, err := getTargetInstance(ctx, flagTarget)
 	if err != nil {
 		logErrorAndExit(err)
 	}
@@ -116,9 +117,6 @@ func terminateSession(ctx context.Context, sessionID *string) error {
 func init() {
 	// Define command flags
 	startSessionCommand.Flags().StringP("target", "t", "", "Target EC2 instance ID (will prompt if not specified)")
-
-	// Bind flags to viper
-	_ = viper.BindPFlag("start-session-target", startSessionCommand.Flags().Lookup("target"))
 
 	// Add command to root
 	rootCmd.AddCommand(startSessionCommand)
