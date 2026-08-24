@@ -167,9 +167,9 @@ func init() {
 	fwdCommand.Flags().StringP("target", "t", "", "Target EC2 instance name (will prompt if not specified)")
 
 	// Bind flags to viper
-	viper.BindPFlag("fwd-remote-port", fwdCommand.Flags().Lookup("remote"))
-	viper.BindPFlag("fwd-local-port", fwdCommand.Flags().Lookup("local"))
-	viper.BindPFlag("fwd-target", fwdCommand.Flags().Lookup("target"))
+	_ = viper.BindPFlag("fwd-remote-port", fwdCommand.Flags().Lookup("remote"))
+	_ = viper.BindPFlag("fwd-local-port", fwdCommand.Flags().Lookup("local"))
+	_ = viper.BindPFlag("fwd-target", fwdCommand.Flags().Lookup("target"))
 
 	// Add command to root
 	rootCmd.AddCommand(fwdCommand)

@@ -166,10 +166,10 @@ func init() {
 	fwdremCommand.Flags().StringP("host", "a", "", "Remote host address to connect to (e.g., internal-db)")
 
 	// Bind flags to viper
-	viper.BindPFlag("fwd-remote-port", fwdremCommand.Flags().Lookup("remote"))
-	viper.BindPFlag("fwd-local-port", fwdremCommand.Flags().Lookup("local"))
-	viper.BindPFlag("fwd-target", fwdremCommand.Flags().Lookup("target"))
-	viper.BindPFlag("fwd-host", fwdremCommand.Flags().Lookup("host"))
+	_ = viper.BindPFlag("fwd-remote-port", fwdremCommand.Flags().Lookup("remote"))
+	_ = viper.BindPFlag("fwd-local-port", fwdremCommand.Flags().Lookup("local"))
+	_ = viper.BindPFlag("fwd-target", fwdremCommand.Flags().Lookup("target"))
+	_ = viper.BindPFlag("fwd-host", fwdremCommand.Flags().Lookup("host"))
 
 	// Add command to root
 	rootCmd.AddCommand(fwdremCommand)

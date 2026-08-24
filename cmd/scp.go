@@ -209,7 +209,7 @@ func executeSCPCommand(scpArgs string, session *ssm.StartSessionOutput, targetIn
 
 	// Build SCP command arguments
 	args := []string{"-o", proxyCommand}
-	for _, arg := range strings.Fields(scpArgs) {
+	for arg := range strings.FieldsSeq(scpArgs) {
 		if arg != "" {
 			args = append(args, arg)
 		}
@@ -222,10 +222,10 @@ func executeSCPCommand(scpArgs string, session *ssm.StartSessionOutput, targetIn
 func init() {
 	// Define command flags
 	scpCommand.Flags().StringP("exec", "e", "", "SCP command arguments (e.g., \"-r localfile user@instance:/remote/path\")")
-	scpCommand.MarkFlagRequired("exec")
+	_ = scpCommand.MarkFlagRequired("exec")
 
 	// Bind flags to viper
-	viper.BindPFlag("scp-exec", scpCommand.Flags().Lookup("exec"))
+	_ = viper.BindPFlag("scp-exec", scpCommand.Flags().Lookup("exec"))
 
 	// Add command to root
 	rootCmd.AddCommand(scpCommand)

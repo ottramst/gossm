@@ -27,7 +27,7 @@ func CallProcessWithSimpleEscape(process string, args ...string) error {
 	cmd := exec.Command(process, args...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
-	
+
 	// Create a pipe for stdin so we can monitor it
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -46,12 +46,12 @@ func CallProcessWithSimpleEscape(process string, args ...string) error {
 		cmd.Stdin = os.Stdin
 		return cmd.Wait()
 	}
-	
+
 	// Ensure we restore terminal state on exit
 	defer func() {
-		term.Restore(int(os.Stdin.Fd()), oldState)
+		_ = term.Restore(int(os.Stdin.Fd()), oldState)
 	}()
-	
+
 	// Add a small delay then print newline to fix prompt alignment
 	// The SSM plugin prints "Starting session..." without a newline
 	go func() {
@@ -66,7 +66,7 @@ func CallProcessWithSimpleEscape(process string, args ...string) error {
 	// Handle stdin copying with escape detection
 	stdinErr := make(chan error, 1)
 	escapeDetected := make(chan bool, 1)
-	
+
 	go func() {
 		stdinErr <- copyWithEscapeDetection(ctx, stdinPipe, os.Stdin, escapeDetected)
 	}()
@@ -89,29 +89,29 @@ func CallProcessWithSimpleEscape(process string, args ...string) error {
 		// Add newline before the "Exiting session" message for proper alignment
 		fmt.Fprintf(os.Stderr, "\r\n")
 		return err
-		
+
 	case <-escapeDetected:
 		// Escape sequence detected
 		cancel()
-		stdinPipe.Close()
-		
+		_ = stdinPipe.Close()
+
 		// Restore terminal before printing
-		term.Restore(int(os.Stdin.Fd()), oldState)
-		
-		fmt.Fprintf(os.Stderr, "\r\n%s\r\n", 
+		_ = term.Restore(int(os.Stdin.Fd()), oldState)
+
+		fmt.Fprintf(os.Stderr, "\r\n%s\r\n",
 			color.YellowString("Escape sequence detected. Terminating session..."))
-		
+
 		// Terminate the process gracefully
 		return terminateGracefully(cmd)
-		
+
 	case sig := <-sigs:
 		// Signal received
 		cancel()
-		stdinPipe.Close()
-		cmd.Process.Signal(sig)
+		_ = stdinPipe.Close()
+		_ = cmd.Process.Signal(sig)
 		<-processDone
 		return nil
-		
+
 	case err := <-stdinErr:
 		// Stdin copy error (likely process died)
 		cancel()
@@ -122,12 +122,12 @@ func CallProcessWithSimpleEscape(process string, args ...string) error {
 
 // copyWithEscapeDetection copies stdin to the process while detecting escape sequences
 func copyWithEscapeDetection(ctx context.Context, dst io.WriteCloser, src io.Reader, escapeDetected chan<- bool) error {
-	defer dst.Close()
-	
+	defer func() { _ = dst.Close() }()
+
 	lastWasNewline := true
 	tildeSeen := false
 	buf := make([]byte, 1)
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -140,13 +140,13 @@ func copyWithEscapeDetection(ctx context.Context, dst io.WriteCloser, src io.Rea
 				}
 				return err
 			}
-			
+
 			if n == 0 {
 				continue
 			}
-			
+
 			b := buf[0]
-			
+
 			// Check for escape sequence only at start of line
 			if lastWasNewline && b == '~' {
 				tildeSeen = true
@@ -157,11 +157,11 @@ func copyWithEscapeDetection(ctx context.Context, dst io.WriteCloser, src io.Rea
 					// Escape sequence complete
 					escapeDetected <- true
 					return nil
-				} else {
-					// Not an escape sequence, send the tilde and current char
-					// This handles ~/, ~user, ~~, and any other ~ usage
-					dst.Write([]byte{'~', b})
 				}
+
+				// Not an escape sequence, send the tilde and current char
+				// This handles ~/, ~user, ~~, and any other ~ usage
+				_, _ = dst.Write([]byte{'~', b})
 				tildeSeen = false
 				if b == '\r' || b == '\n' {
 					lastWasNewline = true
@@ -170,7 +170,7 @@ func copyWithEscapeDetection(ctx context.Context, dst io.WriteCloser, src io.Rea
 				}
 			} else {
 				// Normal character
-				dst.Write([]byte{b})
+				_, _ = dst.Write([]byte{b})
 				if b == '\r' || b == '\n' {
 					lastWasNewline = true
 				} else {
@@ -188,29 +188,29 @@ func terminateGracefully(cmd *exec.Cmd) error {
 		// Process may have already exited
 		return nil
 	}
-	
+
 	// Wait for graceful termination with timeout
 	done := make(chan error, 1)
 	go func() {
 		_, err := cmd.Process.Wait()
 		done <- err
 	}()
-	
+
 	select {
 	case err := <-done:
 		// Process exited gracefully
-		if err != nil && 
-		   err.Error() != "signal: terminated" && 
-		   err.Error() != "signal: broken pipe" &&
-		   !isWaitError(err) {
+		if err != nil &&
+			err.Error() != "signal: terminated" &&
+			err.Error() != "signal: broken pipe" &&
+			!isWaitError(err) {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "%s\r\n", 
+		fmt.Fprintf(os.Stderr, "%s\r\n",
 			color.GreenString("Session terminated gracefully"))
 		return nil
 	case <-time.After(3 * time.Second):
 		// Timeout reached, force kill
-		fmt.Fprintf(os.Stderr, "%s\r\n", 
+		fmt.Fprintf(os.Stderr, "%s\r\n",
 			color.YellowString("Graceful termination timed out, forcing exit..."))
 		if err := cmd.Process.Kill(); err != nil {
 			// Process may have already exited
@@ -227,6 +227,6 @@ func isWaitError(err error) bool {
 		return false
 	}
 	errStr := err.Error()
-	return errStr == "wait: no child processes" || 
-	       errStr == "waitid: no child processes"
+	return errStr == "wait: no child processes" ||
+		errStr == "waitid: no child processes"
 }

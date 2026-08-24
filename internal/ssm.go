@@ -78,7 +78,9 @@ func AskUser() (*User, error) {
 		Message: "Type your connect ssh user (default: root):",
 	}
 	var user string
-	survey.AskOne(prompt, &user)
+	if err := survey.AskOne(prompt, &user); err != nil {
+		return nil, err
+	}
 	user = strings.TrimSpace(user)
 	if user == "" {
 		user = "root"
@@ -319,7 +321,7 @@ func FindInstances(ctx context.Context, cfg aws.Config) (map[string]*Target, err
 // FindInstanceIdsWithConnectedSSM returns instance IDs that have SSM agent connected
 func FindInstanceIdsWithConnectedSSM(ctx context.Context, cfg aws.Config) ([]string, error) {
 	client := ssm.NewFromConfig(cfg)
-	instanceIDs := []string{}
+	var instanceIDs []string
 
 	// Initial query for instances with SSM
 	output, err := client.DescribeInstanceInformation(ctx, &ssm.DescribeInstanceInformationInput{
@@ -492,7 +494,9 @@ func AskHost() (string, error) {
 	}
 
 	var host string
-	survey.AskOne(prompt, &host)
+	if err := survey.AskOne(prompt, &host); err != nil {
+		return "", err
+	}
 
 	host = strings.TrimSpace(host)
 	if host == "" {

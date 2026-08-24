@@ -182,7 +182,7 @@ func executeSSHCommand(sshArgs string, session *ssm.StartSessionOutput, targetNa
 
 	// Build SSH command arguments
 	cmdArgs := []string{"-o", proxyCommand}
-	for _, arg := range strings.Fields(sshArgs) {
+	for arg := range strings.FieldsSeq(sshArgs) {
 		if arg != "" {
 			cmdArgs = append(cmdArgs, arg)
 		}
@@ -198,8 +198,8 @@ func init() {
 	sshCommand.Flags().StringP("identity", "i", "", "SSH identity file path (e.g., ~/.ssh/id_rsa)")
 
 	// Bind flags to viper
-	viper.BindPFlag("ssh-exec", sshCommand.Flags().Lookup("exec"))
-	viper.BindPFlag("ssh-identity", sshCommand.Flags().Lookup("identity"))
+	_ = viper.BindPFlag("ssh-exec", sshCommand.Flags().Lookup("exec"))
+	_ = viper.BindPFlag("ssh-identity", sshCommand.Flags().Lookup("identity"))
 
 	// Add command to root
 	rootCmd.AddCommand(sshCommand)
