@@ -99,30 +99,6 @@ func TestValidatePlugin(t *testing.T) {
 	}
 }
 
-func TestExtractBinary(t *testing.T) {
-	src := filepath.Join(t.TempDir(), "downloaded")
-	content := []byte("binary-bytes")
-	if err := os.WriteFile(src, content, 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	destDir := t.TempDir()
-	destPath, err := extractBinary(src, destDir)
-	if err != nil {
-		t.Fatalf("extractBinary: %v", err)
-	}
-	if filepath.Base(destPath) != GetSsmPluginName() {
-		t.Errorf("dest name = %q", filepath.Base(destPath))
-	}
-	got, err := os.ReadFile(destPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, content) {
-		t.Errorf("extracted content = %q, want %q", got, content)
-	}
-}
-
 // buildZip writes a zip archive with the given name→content entries.
 func buildZip(t *testing.T, path string, entries map[string][]byte) {
 	t.Helper()

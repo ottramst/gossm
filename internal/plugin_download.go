@@ -170,14 +170,20 @@ func getDownloadInfoForPlatform(version string) (string, func(string, string) (s
 				version, awsArch)
 			return url, extractFromRpm, nil
 		default:
-			// For other Linux distributions, use the direct binary
-			url := fmt.Sprintf("https://s3.amazonaws.com/session-manager-downloads/plugin/%s/linux_%s/session-manager-plugin",
+			// AWS stopped publishing raw Linux binaries; the .deb is the
+			// most extractable fallback (requires binutils' ar)
+			url := fmt.Sprintf("https://s3.amazonaws.com/session-manager-downloads/plugin/%s/ubuntu_%s/session-manager-plugin.deb",
 				version, awsArch)
-			return url, extractBinary, nil
+			return url, extractFromDeb, nil
 		}
 	case "darwin":
-		url := fmt.Sprintf("https://s3.amazonaws.com/session-manager-downloads/plugin/%s/mac_%s/session-manager-plugin.pkg",
-			version, awsArch)
+		// Intel packages live under mac/, Apple Silicon under mac_arm64/
+		macDir := "mac"
+		if goarch == "arm64" {
+			macDir = "mac_arm64"
+		}
+		url := fmt.Sprintf("https://s3.amazonaws.com/session-manager-downloads/plugin/%s/%s/session-manager-plugin.pkg",
+			version, macDir)
 		return url, extractFromPkg, nil
 	case "windows":
 		// Windows uses a different URL pattern - no architecture in path
