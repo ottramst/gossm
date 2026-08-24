@@ -41,7 +41,7 @@ AWS Systems Manager Session Manager uses SSH protocol tunneling for secure commu
   - `ssm:DescribeInstanceInformation`
   - `ssm:DescribeInstanceProperties`
   - `ssm:GetConnectionStatus`
-- **Recommended**: Permission for `ec2:DescribeRegions` for region selection
+- For interactive region selection (when no `-r` flag is given): `ec2:DescribeRegions`
 
 ## Installation
 

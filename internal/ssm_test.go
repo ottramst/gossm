@@ -213,32 +213,6 @@ func TestFindInstanceIdByIp(t *testing.T) {
 	}
 }
 
-func TestFindDomainByInstanceId(t *testing.T) {
-	f := &fakeEC2{describeInstances: func(in *ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error) {
-		return &ec2.DescribeInstancesOutput{
-			Reservations: []ec2types.Reservation{{
-				Instances: []ec2types.Instance{{
-					InstanceId:     aws.String("i-1"),
-					PublicDnsName:  aws.String("pub.example.com"),
-					PrivateDnsName: aws.String("priv.example.com"),
-				}},
-			}},
-		}, nil
-	}}
-
-	domains, err := findDomainByInstanceId(context.Background(), f, "i-1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if fmt.Sprint(domains) != fmt.Sprint([]string{"pub.example.com", "priv.example.com"}) {
-		t.Errorf("domains = %v", domains)
-	}
-
-	if _, err := findDomainByInstanceId(context.Background(), f, "i-missing"); err == nil {
-		t.Error("expected error for unknown instance id")
-	}
-}
-
 func TestGetAvailableRegions(t *testing.T) {
 	f := &fakeEC2{describeRegions: func(*ec2.DescribeRegionsInput) (*ec2.DescribeRegionsOutput, error) {
 		return &ec2.DescribeRegionsOutput{Regions: []ec2types.Region{

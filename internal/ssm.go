@@ -38,18 +38,6 @@ const (
 // It is a variable so tests can shorten it.
 var pollInterval = 1 * time.Second
 
-// AWS region list - kept for fallback if API fails
-var defaultAwsRegions = []string{
-	"af-south-1",
-	"ap-east-1", "ap-northeast-1", "ap-northeast-2", "ap-northeast-3", "ap-south-1", "ap-southeast-2", "ap-southeast-3",
-	"ca-central-1",
-	"cn-north-1", "cn-northwest-1",
-	"eu-central-1", "eu-north-1", "eu-south-1", "eu-west-1", "eu-west-2", "eu-west-3",
-	"me-south-1",
-	"sa-east-1",
-	"us-east-1", "us-east-2", "us-gov-east-1", "us-gov-west-2", "us-west-1", "us-west-2",
-}
-
 // Target represents an AWS EC2 instance target
 type Target struct {
 	Name          string // AWS Instance ID
@@ -106,9 +94,7 @@ func AskRegion(ctx context.Context, cfg aws.Config) (*Region, error) {
 	// Get regions from AWS API
 	regions, err := getAvailableRegions(ctx, ec2.NewFromConfig(cfg))
 	if err != nil {
-		// Fall back to default regions if API call fails
-		regions = make([]string, len(defaultAwsRegions))
-		copy(regions, defaultAwsRegions)
+		return nil, fmt.Errorf("failed to list AWS regions (ec2:DescribeRegions is required for interactive region selection; pass --region to skip it): %w", err)
 	}
 
 	sort.Strings(regions)
@@ -332,11 +318,7 @@ func findInstances(ctx context.Context, client ec2API, ssmClient ssmAPI) (map[st
 	return table, nil
 }
 
-// FindInstanceIdsWithConnectedSSM returns instance IDs that have SSM agent connected
-func FindInstanceIdsWithConnectedSSM(ctx context.Context, cfg aws.Config) ([]string, error) {
-	return findInstanceIdsWithConnectedSSM(ctx, ssm.NewFromConfig(cfg))
-}
-
+// findInstanceIdsWithConnectedSSM returns instance IDs that have SSM agent connected
 func findInstanceIdsWithConnectedSSM(ctx context.Context, client ssmAPI) ([]string, error) {
 	var instanceIDs []string
 
@@ -443,69 +425,6 @@ func findInstanceIdByIp(ctx context.Context, client ec2API, ip string) (string, 
 	}
 
 	return "", fmt.Errorf("no instance found with IP address: %s", ip)
-}
-
-// FindDomainByInstanceId finds DNS names for an EC2 instance by ID
-func FindDomainByInstanceId(ctx context.Context, cfg aws.Config, instanceID string) ([]string, error) {
-	return findDomainByInstanceId(ctx, ec2.NewFromConfig(cfg), instanceID)
-}
-
-func findDomainByInstanceId(ctx context.Context, client ec2API, instanceID string) ([]string, error) {
-	// Function to find domain names for an instance
-	findDomainForInstance := func(output *ec2.DescribeInstancesOutput, id string) []string {
-		for _, reservation := range output.Reservations {
-			for _, instance := range reservation.Instances {
-				if aws.ToString(instance.InstanceId) == id {
-					return []string{
-						aws.ToString(instance.PublicDnsName),
-						aws.ToString(instance.PrivateDnsName),
-					}
-				}
-			}
-		}
-		return []string{}
-	}
-
-	// Initial query for running instances
-	output, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-		MaxResults: aws.Int32(maxOutputResults),
-		Filters: []ec2types.Filter{
-			{Name: aws.String("instance-state-name"), Values: []string{"running"}},
-		},
-	})
-	if err != nil {
-		return []string{}, fmt.Errorf("failed to describe instances: %w", err)
-	}
-
-	// Check first page of results
-	domain := findDomainForInstance(output, instanceID)
-	if len(domain) != 0 {
-		return domain, nil
-	}
-
-	// Process any additional pages of results
-	nextToken := output.NextToken
-	for nextToken != nil && *nextToken != "" {
-		nextOutput, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-			MaxResults: aws.Int32(maxOutputResults),
-			NextToken:  nextToken,
-			Filters: []ec2types.Filter{
-				{Name: aws.String("instance-state-name"), Values: []string{"running"}},
-			},
-		})
-		if err != nil {
-			return []string{}, fmt.Errorf("failed to describe additional instances: %w", err)
-		}
-
-		domain = findDomainForInstance(nextOutput, instanceID)
-		if len(domain) != 0 {
-			return domain, nil
-		}
-
-		nextToken = nextOutput.NextToken
-	}
-
-	return []string{}, fmt.Errorf("no domains found for instance: %s", instanceID)
 }
 
 // AskHost prompts the user for a host address
