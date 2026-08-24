@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -211,7 +212,10 @@ func TestGetEmbeddedPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plugin info not written: %v", err)
 	}
-	if info.Source != "embedded" || info.Version != "embedded" {
-		t.Errorf("plugin info = %+v", info)
+	if info.Source != "embedded" {
+		t.Errorf("plugin info source = %q, want embedded", info.Source)
+	}
+	if !regexp.MustCompile(`^\d+(\.\d+){3}$`).MatchString(info.Version) {
+		t.Errorf("plugin info version = %q, want the tracked plugin version", info.Version)
 	}
 }
