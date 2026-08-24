@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -271,10 +270,7 @@ func TestMonitorCommandInvocation(t *testing.T) {
 			}, nil
 		}}
 
-		wg := &sync.WaitGroup{}
-		wg.Add(1)
-		monitorCommandInvocation(context.Background(), f, &ssm.GetCommandInvocationInput{}, wg)
-		wg.Wait()
+		monitorCommandInvocation(context.Background(), f, &ssm.GetCommandInvocationInput{})
 
 		if calls < 2 {
 			t.Errorf("expected at least 2 polls, got %d", calls)
@@ -290,10 +286,7 @@ func TestMonitorCommandInvocation(t *testing.T) {
 			}, nil
 		}}
 
-		wg := &sync.WaitGroup{}
-		wg.Add(1)
-		monitorCommandInvocation(context.Background(), f, &ssm.GetCommandInvocationInput{}, wg)
-		wg.Wait()
+		monitorCommandInvocation(context.Background(), f, &ssm.GetCommandInvocationInput{})
 	})
 
 	t.Run("stops on API error", func(t *testing.T) {
@@ -301,10 +294,7 @@ func TestMonitorCommandInvocation(t *testing.T) {
 			return nil, errors.New("api down")
 		}}
 
-		wg := &sync.WaitGroup{}
-		wg.Add(1)
-		monitorCommandInvocation(context.Background(), f, &ssm.GetCommandInvocationInput{}, wg)
-		wg.Wait()
+		monitorCommandInvocation(context.Background(), f, &ssm.GetCommandInvocationInput{})
 	})
 }
 

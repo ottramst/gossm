@@ -2,6 +2,7 @@ package internal
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -53,7 +54,7 @@ func calculateHash(data []byte) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("%x", hash.Sum(nil)), nil
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // ValidatePlugin ensures the plugin is valid and executable

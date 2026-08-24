@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -99,7 +100,7 @@ func extractFromDeb(debPath, destDir string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("binary not found in deb package")
+	return "", errors.New("binary not found in deb package")
 }
 
 // extractFromRpm extracts the plugin binary from an .rpm package
@@ -109,7 +110,7 @@ func extractFromRpm(rpmPath, destDir string) (string, error) {
 	cpioExists, _ := exec.LookPath("cpio")
 
 	if rpm2cpioExists == "" || cpioExists == "" {
-		return "", fmt.Errorf("rpm2cpio or cpio not available, cannot extract from RPM")
+		return "", errors.New("rpm2cpio or cpio not available, cannot extract from RPM")
 	}
 
 	// Create a temporary directory to extract files
@@ -259,7 +260,7 @@ func findPkgPlugin(tempDir string) (string, error) {
 		return "", fmt.Errorf("failed to search for plugin: %w", err)
 	}
 	if pluginPath == "" {
-		return "", fmt.Errorf("session-manager-plugin not found in package")
+		return "", errors.New("session-manager-plugin not found in package")
 	}
 
 	return pluginPath, nil

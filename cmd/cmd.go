@@ -60,7 +60,7 @@ func displayCommandResults(ctx context.Context, sendOutput *ssm.SendCommandOutpu
 	fmt.Printf("%s\n", color.YellowString("Waiting for command results..."))
 
 	// Create inputs for getting command results
-	var invocationInputs []*ssm.GetCommandInvocationInput
+	invocationInputs := make([]*ssm.GetCommandInvocationInput, 0, len(sendOutput.Command.InstanceIds))
 	for _, instanceID := range sendOutput.Command.InstanceIds {
 		invocationInputs = append(invocationInputs, &ssm.GetCommandInvocationInput{
 			CommandId:  sendOutput.Command.CommandId,

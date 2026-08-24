@@ -80,7 +80,7 @@ func getSSHDetailsAndTarget(ctx context.Context, flagExec, flagIdentity string) 
 
 	// Validate flags - can't use both exec and identity
 	if execFlag != "" && identityFlag != "" {
-		return "", "", fmt.Errorf("cannot use both --exec and --identity flags (use only one)")
+		return "", "", errors.New("cannot use both --exec and --identity flags (use only one)")
 	}
 
 	// Handle interactive mode
