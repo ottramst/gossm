@@ -3,6 +3,11 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (vX.Y.Z)"
+        required: true
 
 permissions:
   contents: write
@@ -15,9 +20,26 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      # Manual releases: validate the input, tag the master HEAD, and
+      # push the tag. The rest of the job then releases that tag.
+      - name: Create release tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          [ "$REF_NAME" = "master" ] || { echo "Manual releases must run from master, got: $REF_NAME"; exit 1; }
+          echo "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "version must look like vX.Y.Z, got: $VERSION"; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+
       - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
