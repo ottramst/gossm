@@ -159,9 +159,9 @@ func setupSsmPlugin(plugin []byte) {
 
 // setupAWSCredentials sets up AWS credentials using the AWS SDK's credential chain
 func setupAWSCredentials(awsProfile, awsRegion string) {
-	// Check if we need special handling for MFA subcommand
+	// Validate the invoked subcommand before touching credentials
 	args := os.Args[1:]
-	subcmd, _, err := rootCmd.Find(args)
+	_, _, err := rootCmd.Find(args)
 	if err != nil {
 		logErrorAndExit(internal.WrapError(err))
 	}
@@ -170,12 +170,6 @@ func setupAWSCredentials(awsProfile, awsRegion string) {
 	if _, err := os.Stat(credentialWithMFA); err == nil && os.Getenv("AWS_SHAREDcredentialS_FILE") == "" {
 		color.Yellow("[Use] gossm default mfa credential file %s", credentialWithMFA)
 		os.Setenv("AWS_SHAREDcredentialS_FILE", credentialWithMFA)
-	}
-
-	// For MFA command, ensure we're using credentials without session tokens
-	if subcmd.Use == "mfa" {
-		// Here we could clear any session tokens or use a separate profile that doesn't use session tokens
-		// This depends on the specifics of how the MFA command is implemented
 	}
 
 	// Use AWS SDK's built-in credential chain with our profile

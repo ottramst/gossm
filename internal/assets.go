@@ -493,11 +493,10 @@ func extractFromPkg(pkgPath, destDir string) (string, error) {
 	// Use pkgutil to expand the package
 	// First try --expand-full for newer macOS versions
 	cmd := exec.Command("pkgutil", "--expand-full", pkgPath, filepath.Join(tempDir, "expanded"))
-	output, err := cmd.CombinedOutput()
-	if err != nil {
+	if _, err := cmd.CombinedOutput(); err != nil {
 		// If --expand-full fails (older macOS), try regular --expand
 		cmd = exec.Command("pkgutil", "--expand", pkgPath, filepath.Join(tempDir, "expanded"))
-		output, err = cmd.CombinedOutput()
+		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return "", fmt.Errorf("failed to expand pkg: %w, output: %s", err, string(output))
 		}
