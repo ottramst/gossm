@@ -166,9 +166,9 @@ func setupAWSCredentials(awsProfile, awsRegion string) {
 	}
 
 	// Check for special MFA credentials file
-	if _, err := os.Stat(credentialWithMFA); err == nil && os.Getenv("AWS_SHAREDcredentialS_FILE") == "" {
+	if _, err := os.Stat(credentialWithMFA); err == nil && os.Getenv("AWS_SHARED_CREDENTIALS_FILE") == "" {
 		color.Yellow("[Use] gossm default mfa credential file %s", credentialWithMFA)
-		_ = os.Setenv("AWS_SHAREDcredentialS_FILE", credentialWithMFA)
+		_ = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", credentialWithMFA)
 	}
 
 	// Use AWS SDK's built-in credential chain with our profile
