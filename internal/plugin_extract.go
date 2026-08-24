@@ -14,23 +14,6 @@ import (
 	"strings"
 )
 
-// extractBinary handles direct binary downloads (no packaging)
-func extractBinary(srcPath, destDir string) (string, error) {
-	destPath := filepath.Join(destDir, GetSsmPluginName())
-
-	// Copy the file
-	input, err := os.ReadFile(srcPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read binary: %w", err)
-	}
-
-	if err := os.WriteFile(destPath, input, 0755); err != nil {
-		return "", fmt.Errorf("failed to write binary: %w", err)
-	}
-
-	return destPath, nil
-}
-
 // extractFromDeb extracts the plugin binary from a .deb package
 func extractFromDeb(debPath, destDir string) (string, error) {
 	// Create a temporary directory to extract files
