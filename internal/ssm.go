@@ -32,10 +32,11 @@ const (
 
 	// commandTimeout is the timeout for SSM commands in seconds
 	commandTimeout = 60
-
-	// pollInterval is the interval for checking command status
-	pollInterval = 1 * time.Second
 )
+
+// pollInterval is the interval for checking command status.
+// It is a variable so tests can shorten it.
+var pollInterval = 1 * time.Second
 
 // AWS region list - kept for fallback if API fails
 var defaultAwsRegions = []string{
@@ -72,6 +73,18 @@ type Port struct {
 	Local  string // Local port
 }
 
+// ec2API is the subset of the EC2 client used by gossm; *ec2.Client implements it.
+type ec2API interface {
+	DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	DescribeRegions(ctx context.Context, params *ec2.DescribeRegionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRegionsOutput, error)
+}
+
+// ssmAPI is the subset of the SSM client used by gossm; *ssm.Client implements it.
+type ssmAPI interface {
+	DescribeInstanceInformation(ctx context.Context, params *ssm.DescribeInstanceInformationInput, optFns ...func(*ssm.Options)) (*ssm.DescribeInstanceInformationOutput, error)
+	GetCommandInvocation(ctx context.Context, params *ssm.GetCommandInvocationInput, optFns ...func(*ssm.Options)) (*ssm.GetCommandInvocationOutput, error)
+}
+
 // AskUser prompts the user to select an SSH username
 func AskUser() (*User, error) {
 	prompt := &survey.Input{
@@ -91,7 +104,7 @@ func AskUser() (*User, error) {
 // AskRegion prompts the user to select an AWS region
 func AskRegion(ctx context.Context, cfg aws.Config) (*Region, error) {
 	// Get regions from AWS API
-	regions, err := getAvailableRegions(ctx, cfg)
+	regions, err := getAvailableRegions(ctx, ec2.NewFromConfig(cfg))
 	if err != nil {
 		// Fall back to default regions if API call fails
 		regions = make([]string, len(defaultAwsRegions))
@@ -121,9 +134,7 @@ func AskRegion(ctx context.Context, cfg aws.Config) (*Region, error) {
 }
 
 // getAvailableRegions fetches available AWS regions
-func getAvailableRegions(ctx context.Context, cfg aws.Config) ([]string, error) {
-	client := ec2.NewFromConfig(cfg)
-
+func getAvailableRegions(ctx context.Context, client ec2API) ([]string, error) {
 	output, err := client.DescribeRegions(ctx, &ec2.DescribeRegionsInput{
 		AllRegions: aws.Bool(true),
 	})
@@ -261,11 +272,14 @@ func AskPorts() (*Port, error) {
 
 // FindInstances returns all running EC2 instances that have SSM agent
 func FindInstances(ctx context.Context, cfg aws.Config) (map[string]*Target, error) {
-	client := ec2.NewFromConfig(cfg)
+	return findInstances(ctx, ec2.NewFromConfig(cfg), ssm.NewFromConfig(cfg))
+}
+
+func findInstances(ctx context.Context, client ec2API, ssmClient ssmAPI) (map[string]*Target, error) {
 	table := make(map[string]*Target)
 
 	// Find instance IDs with connected SSM agent
-	instanceIDs, err := FindInstanceIdsWithConnectedSSM(ctx, cfg)
+	instanceIDs, err := findInstanceIdsWithConnectedSSM(ctx, ssmClient)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +334,10 @@ func FindInstances(ctx context.Context, cfg aws.Config) (map[string]*Target, err
 
 // FindInstanceIdsWithConnectedSSM returns instance IDs that have SSM agent connected
 func FindInstanceIdsWithConnectedSSM(ctx context.Context, cfg aws.Config) ([]string, error) {
-	client := ssm.NewFromConfig(cfg)
+	return findInstanceIdsWithConnectedSSM(ctx, ssm.NewFromConfig(cfg))
+}
+
+func findInstanceIdsWithConnectedSSM(ctx context.Context, client ssmAPI) ([]string, error) {
 	var instanceIDs []string
 
 	// Initial query for instances with SSM
@@ -363,8 +380,10 @@ func FindInstanceIdsWithConnectedSSM(ctx context.Context, cfg aws.Config) ([]str
 
 // FindInstanceIdByIp finds an EC2 instance ID by IP address
 func FindInstanceIdByIp(ctx context.Context, cfg aws.Config, ip string) (string, error) {
-	client := ec2.NewFromConfig(cfg)
+	return findInstanceIdByIp(ctx, ec2.NewFromConfig(cfg), ip)
+}
 
+func findInstanceIdByIp(ctx context.Context, client ec2API, ip string) (string, error) {
 	// Function to find an instance with matching IP
 	findInstanceWithIP := func(output *ec2.DescribeInstancesOutput) string {
 		for _, reservation := range output.Reservations {
@@ -428,8 +447,10 @@ func FindInstanceIdByIp(ctx context.Context, cfg aws.Config, ip string) (string,
 
 // FindDomainByInstanceId finds DNS names for an EC2 instance by ID
 func FindDomainByInstanceId(ctx context.Context, cfg aws.Config, instanceID string) ([]string, error) {
-	client := ec2.NewFromConfig(cfg)
+	return findDomainByInstanceId(ctx, ec2.NewFromConfig(cfg), instanceID)
+}
 
+func findDomainByInstanceId(ctx context.Context, client ec2API, instanceID string) ([]string, error) {
 	// Function to find domain names for an instance
 	findDomainForInstance := func(output *ec2.DescribeInstancesOutput, id string) []string {
 		for _, reservation := range output.Reservations {
@@ -531,15 +552,19 @@ func DeleteStartSession(ctx context.Context, cfg aws.Config, input *ssm.Terminat
 // SendCommand sends a command to EC2 instances via SSM
 func SendCommand(ctx context.Context, cfg aws.Config, targets []*Target, command string) (*ssm.SendCommandOutput, error) {
 	client := ssm.NewFromConfig(cfg)
+	return client.SendCommand(ctx, buildSendCommandInput(targets, command))
+}
 
+// buildSendCommandInput constructs the SSM SendCommand request for running a
+// shell command on the given targets.
+func buildSendCommandInput(targets []*Target, command string) *ssm.SendCommandInput {
 	// Extract instance IDs from targets
 	instanceIDs := make([]string, 0, len(targets))
 	for _, target := range targets {
 		instanceIDs = append(instanceIDs, target.Name)
 	}
 
-	// Create command input
-	input := &ssm.SendCommandInput{
+	return &ssm.SendCommandInput{
 		DocumentName:   aws.String(shellDocumentName),
 		InstanceIds:    instanceIDs,
 		TimeoutSeconds: aws.Int32(commandTimeout),
@@ -550,8 +575,6 @@ func SendCommand(ctx context.Context, cfg aws.Config, targets []*Target, command
 			"commands": {command},
 		},
 	}
-
-	return client.SendCommand(ctx, input)
 }
 
 // PrintCommandInvocation watches and displays command invocation results
@@ -569,7 +592,7 @@ func PrintCommandInvocation(ctx context.Context, cfg aws.Config, inputs []*ssm.G
 }
 
 // monitorCommandInvocation monitors a single command invocation
-func monitorCommandInvocation(ctx context.Context, client *ssm.Client, input *ssm.GetCommandInvocationInput, wg *sync.WaitGroup) {
+func monitorCommandInvocation(ctx context.Context, client ssmAPI, input *ssm.GetCommandInvocationInput, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	ticker := time.NewTicker(pollInterval)
