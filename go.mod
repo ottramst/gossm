@@ -12,7 +12,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.73.7
 	github.com/aws/aws-sdk-go-v2/service/sts v1.45.7
 	github.com/fatih/color v1.19.0
-	github.com/gjbae1212/go-wraperror v0.7.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0

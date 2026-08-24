@@ -4,3 +4,18 @@ version: "2"
 
 linters:
   default: standard
+  enable:
+    - dupl
+    - gocritic
+    - gocyclo
+    - misspell
+    - perfsprint
+    - prealloc
+    - unconvert
+    - unparam
+    - usestdlibvars
+  settings:
+    gocyclo:
+      min-complexity: 15
+    dupl:
+      threshold: 120

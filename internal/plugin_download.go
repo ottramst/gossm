@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -133,7 +134,7 @@ func getLatestVersion() (string, error) {
 	// Clean up the version string (remove whitespace, etc.)
 	version := strings.TrimSpace(string(data))
 	if version == "" {
-		return "", fmt.Errorf("received empty version string")
+		return "", errors.New("received empty version string")
 	}
 
 	return version, nil
@@ -159,15 +160,16 @@ func getDownloadInfoForPlatform(version string) (string, func(string, string) (s
 	switch goos {
 	case "linux":
 		// Check if we're on a system that uses .deb or .rpm
-		if isDebianBased() {
+		switch {
+		case isDebianBased():
 			url := fmt.Sprintf("https://s3.amazonaws.com/session-manager-downloads/plugin/%s/ubuntu_%s/session-manager-plugin.deb",
 				version, awsArch)
 			return url, extractFromDeb, nil
-		} else if isRpmBased() {
+		case isRpmBased():
 			url := fmt.Sprintf("https://s3.amazonaws.com/session-manager-downloads/plugin/%s/linux_%s/session-manager-plugin.rpm",
 				version, awsArch)
 			return url, extractFromRpm, nil
-		} else {
+		default:
 			// For other Linux distributions, use the direct binary
 			url := fmt.Sprintf("https://s3.amazonaws.com/session-manager-downloads/plugin/%s/linux_%s/session-manager-plugin",
 				version, awsArch)

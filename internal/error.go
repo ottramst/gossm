@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
-
-	"github.com/gjbae1212/go-wraperror"
 )
 
 // Common error types for the application
@@ -18,8 +16,9 @@ var (
 	ErrUnknown = errors.New("unknown error")
 )
 
-// WrapError wraps an error with file and line information for better debugging
-// If the input error is nil, nil is returned
+// WrapError annotates an error with the calling function and line for better
+// debugging. If the input error is nil, nil is returned. The result unwraps
+// to the original error, so errors.Is/As keep working.
 func WrapError(err error) error {
 	if err == nil {
 		return nil
@@ -33,7 +32,5 @@ func WrapError(err error) error {
 	funcNameParts := strings.Split(fullFuncName, "/")
 	funcName := funcNameParts[len(funcNameParts)-1]
 
-	// Create wrapped error with function name and line number
-	chainErr := wraperror.Error(err)
-	return chainErr.Wrap(fmt.Errorf("%s:%d", funcName, line))
+	return fmt.Errorf("%s:%d: %w", funcName, line, err)
 }

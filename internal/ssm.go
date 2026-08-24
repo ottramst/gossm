@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -97,7 +97,7 @@ func AskRegion(ctx context.Context, cfg aws.Config) (*Region, error) {
 		return nil, fmt.Errorf("failed to list AWS regions (ec2:DescribeRegions is required for interactive region selection; pass --region to skip it): %w", err)
 	}
 
-	sort.Strings(regions)
+	slices.Sort(regions)
 
 	// Prompt user to select a region
 	prompt := &survey.Select{
@@ -151,7 +151,7 @@ func AskTarget(ctx context.Context, cfg aws.Config) (*Target, error) {
 	for k := range instances {
 		options = append(options, k)
 	}
-	sort.Strings(options)
+	slices.Sort(options)
 
 	if len(options) == 0 {
 		return nil, errors.New("no EC2 instances found")
@@ -190,7 +190,7 @@ func AskMultiTarget(ctx context.Context, cfg aws.Config) ([]*Target, error) {
 	for k := range instances {
 		options = append(options, k)
 	}
-	sort.Strings(options)
+	slices.Sort(options)
 
 	if len(options) == 0 {
 		return nil, errors.New("no EC2 instances found")
@@ -272,10 +272,8 @@ func findInstances(ctx context.Context, client ec2API, ssmClient ssmAPI) (map[st
 
 	// Process instances in batches (AWS API limit is 200 filters per call)
 	for len(instanceIDs) > 0 {
-		batchSize := len(instanceIDs)
-		if batchSize >= 200 {
-			batchSize = 199
-		}
+		// AWS caps a single DescribeInstances filter at 200 values
+		batchSize := min(len(instanceIDs), 199)
 
 		// Get batch of instances
 		batch := instanceIDs[:batchSize]
@@ -322,39 +320,19 @@ func findInstances(ctx context.Context, client ec2API, ssmClient ssmAPI) (map[st
 func findInstanceIdsWithConnectedSSM(ctx context.Context, client ssmAPI) ([]string, error) {
 	var instanceIDs []string
 
-	// Initial query for instances with SSM
-	output, err := client.DescribeInstanceInformation(ctx, &ssm.DescribeInstanceInformationInput{
+	paginator := ssm.NewDescribeInstanceInformationPaginator(client, &ssm.DescribeInstanceInformationInput{
 		MaxResults: aws.Int32(maxOutputResults),
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to describe instance information: %w", err)
-	}
-
-	// Process first page of results
-	for _, info := range output.InstanceInformationList {
-		if info.InstanceId != nil {
-			instanceIDs = append(instanceIDs, *info.InstanceId)
-		}
-	}
-
-	// Process any additional pages of results
-	nextToken := output.NextToken
-	for nextToken != nil && *nextToken != "" {
-		nextOutput, err := client.DescribeInstanceInformation(ctx, &ssm.DescribeInstanceInformationInput{
-			NextToken:  nextToken,
-			MaxResults: aws.Int32(maxOutputResults),
-		})
+	for paginator.HasMorePages() {
+		output, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to describe additional instance information: %w", err)
+			return nil, fmt.Errorf("failed to describe instance information: %w", err)
 		}
-
-		for _, info := range nextOutput.InstanceInformationList {
+		for _, info := range output.InstanceInformationList {
 			if info.InstanceId != nil {
 				instanceIDs = append(instanceIDs, *info.InstanceId)
 			}
 		}
-
-		nextToken = nextOutput.NextToken
 	}
 
 	return instanceIDs, nil
@@ -385,43 +363,20 @@ func findInstanceIdByIp(ctx context.Context, client ec2API, ip string) (string, 
 		return ""
 	}
 
-	// Initial query for running instances
-	output, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+	paginator := ec2.NewDescribeInstancesPaginator(client, &ec2.DescribeInstancesInput{
 		MaxResults: aws.Int32(maxOutputResults),
 		Filters: []ec2types.Filter{
 			{Name: aws.String("instance-state-name"), Values: []string{"running"}},
 		},
 	})
-	if err != nil {
-		return "", fmt.Errorf("failed to describe instances: %w", err)
-	}
-
-	// Check first page of results
-	instanceID := findInstanceWithIP(output)
-	if instanceID != "" {
-		return instanceID, nil
-	}
-
-	// Process any additional pages of results
-	nextToken := output.NextToken
-	for nextToken != nil && *nextToken != "" {
-		nextOutput, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-			MaxResults: aws.Int32(maxOutputResults),
-			NextToken:  nextToken,
-			Filters: []ec2types.Filter{
-				{Name: aws.String("instance-state-name"), Values: []string{"running"}},
-			},
-		})
+	for paginator.HasMorePages() {
+		output, err := paginator.NextPage(ctx)
 		if err != nil {
-			return "", fmt.Errorf("failed to describe additional instances: %w", err)
+			return "", fmt.Errorf("failed to describe instances: %w", err)
 		}
-
-		instanceID = findInstanceWithIP(nextOutput)
-		if instanceID != "" {
+		if instanceID := findInstanceWithIP(output); instanceID != "" {
 			return instanceID, nil
 		}
-
-		nextToken = nextOutput.NextToken
 	}
 
 	return "", fmt.Errorf("no instance found with IP address: %s", ip)
@@ -499,21 +454,18 @@ func buildSendCommandInput(targets []*Target, command string) *ssm.SendCommandIn
 // PrintCommandInvocation watches and displays command invocation results
 func PrintCommandInvocation(ctx context.Context, cfg aws.Config, inputs []*ssm.GetCommandInvocationInput) {
 	client := ssm.NewFromConfig(cfg)
-	wg := &sync.WaitGroup{}
+	var wg sync.WaitGroup
 
 	// Process each command invocation in parallel
 	for _, input := range inputs {
-		wg.Add(1)
-		go monitorCommandInvocation(ctx, client, input, wg)
+		wg.Go(func() { monitorCommandInvocation(ctx, client, input) })
 	}
 
 	wg.Wait()
 }
 
 // monitorCommandInvocation monitors a single command invocation
-func monitorCommandInvocation(ctx context.Context, client ssmAPI, input *ssm.GetCommandInvocationInput, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func monitorCommandInvocation(ctx context.Context, client ssmAPI, input *ssm.GetCommandInvocationInput) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 

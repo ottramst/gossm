@@ -148,11 +148,12 @@ func copyWithEscapeDetection(ctx context.Context, dst io.WriteCloser, src io.Rea
 			b := buf[0]
 
 			// Check for escape sequence only at start of line
-			if lastWasNewline && b == '~' {
+			switch {
+			case lastWasNewline && b == '~':
 				tildeSeen = true
 				lastWasNewline = false
 				continue // Don't send the tilde yet
-			} else if tildeSeen {
+			case tildeSeen:
 				if b == '.' {
 					// Escape sequence complete
 					escapeDetected <- true
@@ -163,19 +164,11 @@ func copyWithEscapeDetection(ctx context.Context, dst io.WriteCloser, src io.Rea
 				// This handles ~/, ~user, ~~, and any other ~ usage
 				_, _ = dst.Write([]byte{'~', b})
 				tildeSeen = false
-				if b == '\r' || b == '\n' {
-					lastWasNewline = true
-				} else {
-					lastWasNewline = false
-				}
-			} else {
+				lastWasNewline = b == '\r' || b == '\n'
+			default:
 				// Normal character
 				_, _ = dst.Write([]byte{b})
-				if b == '\r' || b == '\n' {
-					lastWasNewline = true
-				} else {
-					lastWasNewline = false
-				}
+				lastWasNewline = b == '\r' || b == '\n'
 			}
 		}
 	}

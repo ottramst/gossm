@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,7 +34,7 @@ or send files to your AWS servers using start-session, ssh, scp via AWS Systems 
 	credential *Credential
 
 	// credentialWithMFA is the path to the file containing temporary credentials obtained via MFA
-	credentialWithMFA = fmt.Sprintf("%s_mfa", config.DefaultSharedCredentialsFilename())
+	credentialWithMFA = config.DefaultSharedCredentialsFilename() + "_mfa"
 )
 
 // Credential holds AWS configuration and credential information for the session
@@ -212,7 +213,7 @@ func setupAWSCredentials(awsProfile, awsRegion string) {
 
 	// Validate credentials
 	if creds.AccessKeyID == "" || creds.SecretAccessKey == "" {
-		logErrorAndExit(internal.WrapError(fmt.Errorf("invalid AWS credentials: missing access key or secret key")))
+		logErrorAndExit(internal.WrapError(errors.New("invalid AWS credentials: missing access key or secret key")))
 	}
 
 	credential.awsConfig = &awsConfig
