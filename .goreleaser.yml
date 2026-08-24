@@ -1,17 +1,10 @@
-# This is an example .goreleaser.yml file with some sensible defaults.
-# Make sure to check the documentation at https://goreleaser.com
-
-# The lines below are called `modelines`. See `:help modeline`
-# Feel free to remove those if you don't want/need to use them.
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
-# vim: set ts=2 sw=2 tw=0 fo=cnqoj
 
 version: 2
 
 before:
   hooks:
     - go mod tidy
-    - go generate ./...
 
 builds:
   - binary: gossm
@@ -24,19 +17,17 @@ builds:
     goarch:
       - amd64
       - arm64
-    asmflags:
-      - all=-trimpath={{.Env.GOPATH}}
-    gcflags:
-      - all=-trimpath={{.Env.GOPATH}}
-    ldflags:
-      - -s -w
-      - -X main.gossmVersion=v2.0.0 # version
     ignore:
       - goos: windows
         goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.gossmVersion=v{{.Version}}
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     # this name template makes the OS and Arch compatible with the results of `uname`.
     name_template: >-
       {{ .ProjectName }}_
@@ -48,14 +39,31 @@ archives:
     # use zip for windows archives
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
+# Release notes are grouped by Conventional Commit type.
 changelog:
   sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
+      - '^docs(\(.+\))?:'
+      - '^test(\(.+\))?:'
+      - '^ci(\(.+\))?:'
+      - '^style(\(.+\))?:'
+      - '^chore: '
+      - '^Merge '
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?!?:'
+      order: 100
+    - title: Bug fixes
+      regexp: '^fix(\(.+\))?!?:'
+      order: 200
+    - title: Dependencies
+      regexp: '^chore\(deps\)!?:'
+      order: 300
+    - title: Other
+      order: 999
 
 release:
   github:
