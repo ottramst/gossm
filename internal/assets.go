@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,11 +17,6 @@ import (
 	"strings"
 	"time"
 )
-
-// Keep embed directive for fallback if download fails
-//
-//go:embed assets/*
-var assets embed.FS
 
 const (
 	// defaultPluginVersion is used when no specific version is requested
@@ -119,34 +113,21 @@ func GetPluginDirectory() string {
 	return filepath.Join(homeDir, ".gossm", "plugins")
 }
 
-// getEmbeddedPlugin extracts the plugin from embedded assets
+// getEmbeddedPlugin installs the plugin bundled into this build. Only the
+// current platform's plugin is embedded — see the embed_*.go files.
 func getEmbeddedPlugin(pluginDir string) ([]byte, error) {
-	goos := strings.ToLower(runtime.GOOS)
-	goarch := strings.ToLower(runtime.GOARCH)
-
-	// Windows ARM64 uses the AMD64 binary (via emulation)
-	if goos == "windows" && goarch == "arm64" {
-		goarch = "amd64"
-	}
-
-	pluginKey := fmt.Sprintf("plugin/%s_%s/%s",
-		goos,
-		goarch,
-		GetSsmPluginName())
-
-	data, err := assets.ReadFile("assets/" + pluginKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract embedded plugin: %w", err)
+	if len(embeddedPlugin) == 0 {
+		return nil, fmt.Errorf("no embedded session-manager-plugin for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 
 	// Write plugin to disk
 	pluginPath := filepath.Join(pluginDir, GetSsmPluginName())
-	if err := os.WriteFile(pluginPath, data, 0755); err != nil {
+	if err := os.WriteFile(pluginPath, embeddedPlugin, 0755); err != nil {
 		return nil, fmt.Errorf("failed to write plugin file: %w", err)
 	}
 
 	// Calculate hash
-	hash, _ := calculateHash(data)
+	hash, _ := calculateHash(embeddedPlugin)
 
 	// Save plugin info
 	info := PluginInfo{
@@ -159,7 +140,7 @@ func getEmbeddedPlugin(pluginDir string) ([]byte, error) {
 		return nil, err
 	}
 
-	return data, nil
+	return embeddedPlugin, nil
 }
 
 // downloadPlugin downloads and installs the specified plugin version
