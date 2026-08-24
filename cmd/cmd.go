@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -13,11 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ottramst/gossm/internal"
-)
-
-const (
-	// commandWaitTime is the duration to wait for command execution results
-	commandWaitTime = 3 * time.Second
 )
 
 var (
@@ -64,9 +58,6 @@ func displayCommandInfo(execCommand string, targets []*internal.Target) {
 // displayCommandResults waits for and displays the results of command execution
 func displayCommandResults(ctx context.Context, sendOutput *ssm.SendCommandOutput) {
 	fmt.Printf("%s\n", color.YellowString("Waiting for command results..."))
-
-	// Wait for command execution to complete
-	time.Sleep(commandWaitTime)
 
 	// Create inputs for getting command results
 	var invocationInputs []*ssm.GetCommandInvocationInput
