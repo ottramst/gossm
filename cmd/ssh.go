@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/fatih/color"
+	"github.com/kballard/go-shellquote"
 	"github.com/spf13/cobra"
 
 	"github.com/ottramst/gossm/internal"
@@ -106,49 +108,80 @@ func handleInteractiveSSH(ctx context.Context, identityFlag string) (string, str
 	}
 
 	// Generate SSH command
-	sshCommand := internal.GenerateSSHExecCommand("", identityFlag, sshUser.Name, target.PublicDomain)
+	sshCommand := internal.GenerateSSHExecCommand("", identityFlag, sshUser.Name, sshHostForTarget(target))
 
 	return sshCommand, target.Name, nil
 }
 
+// sshHostForTarget picks the host to place on the SSH command line: the
+// public DNS name when present, otherwise the instance ID — the SSM
+// ProxyCommand tunnels by instance ID either way.
+func sshHostForTarget(target *internal.Target) string {
+	if target.PublicDomain != "" {
+		return target.PublicDomain
+	}
+	return target.Name
+}
+
 // handleDirectSSHCommand processes a directly specified SSH command
 func handleDirectSSHCommand(ctx context.Context, execFlag string) (string, string, error) {
-	// Parse the exec command to extract the server
-	parts := strings.Split(execFlag, " ")
-
-	// The server should be the last part of the command (user@server)
-	lastPart := parts[len(parts)-1]
-	serverParts := strings.Split(lastPart, "@")
-
-	if len(serverParts) < 2 {
-		return "", "", fmt.Errorf("invalid SSH command format: must include user@server")
-	}
-
-	// Extract server hostname
-	server := serverParts[len(serverParts)-1]
-
-	// Resolve server to IP
-	ips, err := net.LookupIP(server)
-	if err != nil || len(ips) == 0 {
-		return "", "", fmt.Errorf("failed to resolve hostname '%s': %w", server, err)
-	}
-
-	ip := ips[0].String()
-
-	// Find instance by IP
-	instanceID, err := internal.FindInstanceIdByIp(ctx, *credential.awsConfig, ip)
+	parts, err := shellquote.Split(execFlag)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to find instance by IP '%s': %w", ip, err)
+		return "", "", fmt.Errorf("invalid SSH command: %w", err)
 	}
 
-	if instanceID == "" {
-		return "", "", fmt.Errorf("no matching instance found for IP '%s'", ip)
+	host, err := hostFromSSHArgs(parts)
+	if err != nil {
+		return "", "", err
+	}
+
+	instanceID, err := resolveTargetHost(ctx, host)
+	if err != nil {
+		return "", "", err
 	}
 
 	// Generate SSH command
 	sshCommand := internal.GenerateSSHExecCommand(execFlag, "", "", "")
 
 	return sshCommand, instanceID, nil
+}
+
+// hostFromSSHArgs extracts the host from parsed SSH arguments; the last
+// argument must be user@host.
+func hostFromSSHArgs(parts []string) (string, error) {
+	if len(parts) == 0 {
+		return "", errors.New("invalid SSH command format: must include user@server")
+	}
+	lastPart := parts[len(parts)-1]
+	serverParts := strings.Split(lastPart, "@")
+	if len(serverParts) < 2 || serverParts[len(serverParts)-1] == "" {
+		return "", errors.New("invalid SSH command format: must include user@server")
+	}
+	return serverParts[len(serverParts)-1], nil
+}
+
+// resolveTargetHost resolves an ssh/scp destination host to an EC2 instance
+// ID: instance IDs are used directly, anything else is resolved via DNS and
+// matched against running instances by IP.
+func resolveTargetHost(ctx context.Context, host string) (string, error) {
+	if strings.HasPrefix(host, "i-") || strings.HasPrefix(host, "mi-") {
+		return host, nil
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return "", fmt.Errorf("failed to resolve hostname '%s': %w", host, err)
+	}
+	ip := ips[0].String()
+
+	instanceID, err := internal.FindInstanceIdByIp(ctx, *credential.awsConfig, ip)
+	if err != nil {
+		return "", fmt.Errorf("failed to find instance by IP '%s': %w", ip, err)
+	}
+	if instanceID == "" {
+		return "", fmt.Errorf("no matching instance found for IP '%s'", ip)
+	}
+	return instanceID, nil
 }
 
 // executeSSHCommand executes the SSH command with SSM as proxy
@@ -182,13 +215,12 @@ func executeSSHCommand(sshArgs string, session *ssm.StartSessionOutput, targetNa
 		string(paramsJSON),
 	)
 
-	// Build SSH command arguments
-	cmdArgs := []string{"-o", proxyCommand}
-	for arg := range strings.FieldsSeq(sshArgs) {
-		if arg != "" {
-			cmdArgs = append(cmdArgs, arg)
-		}
+	// Build SSH command arguments, respecting quoted segments
+	parsedArgs, err := shellquote.Split(sshArgs)
+	if err != nil {
+		return fmt.Errorf("invalid SSH arguments: %w", err)
 	}
+	cmdArgs := append([]string{"-o", proxyCommand}, parsedArgs...)
 
 	// Execute SSH command
 	return internal.CallProcess("ssh", cmdArgs...)

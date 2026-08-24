@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/fatih/color"
+	"github.com/kballard/go-shellquote"
 	"github.com/spf13/cobra"
 
 	"github.com/ottramst/gossm/internal"
@@ -93,10 +93,13 @@ func validateSCPArguments(flagExec string) (string, error) {
 		return "", errors.New("SCP command arguments are required")
 	}
 
-	// Basic validation of SCP arguments
-	parts := strings.Split(scpArgs, " ")
+	// Basic validation of SCP arguments, respecting quoted segments
+	parts, err := shellquote.Split(scpArgs)
+	if err != nil {
+		return "", fmt.Errorf("invalid SCP arguments: %w", err)
+	}
 	if len(parts) < 2 {
-		return "", fmt.Errorf("invalid SCP arguments: must include source and destination")
+		return "", errors.New("invalid SCP arguments: must include source and destination")
 	}
 
 	return scpArgs, nil
@@ -104,56 +107,36 @@ func validateSCPArguments(flagExec string) (string, error) {
 
 // findTargetInstanceID identifies the instance ID for the SCP operation
 func findTargetInstanceID(ctx context.Context, scpArgs string) (string, error) {
-	// Split the arguments to identify source and destination
-	parts := strings.Split(scpArgs, " ")
-	dst := parts[len(parts)-1]
-	src := parts[len(parts)-2]
-
-	// Parse to find the host part (could be in source or destination)
-	var hostname string
-
-	// Check destination for hostname (user@host:path format)
-	dstParts := strings.Split(dst, ":")
-	if len(dstParts) > 1 {
-		hostParts := strings.Split(dstParts[0], "@")
-		if len(hostParts) == 2 {
-			hostname = hostParts[1]
-		}
-	}
-
-	// If not found in destination, check source
-	if hostname == "" {
-		srcParts := strings.Split(src, ":")
-		if len(srcParts) > 1 {
-			hostParts := strings.Split(srcParts[0], "@")
-			if len(hostParts) == 2 {
-				hostname = hostParts[1]
-			}
-		}
-	}
-
-	if hostname == "" {
-		return "", fmt.Errorf("could not identify target hostname in SCP arguments")
-	}
-
-	// Resolve hostname to IP address
-	ips, err := net.LookupIP(hostname)
-	if err != nil || len(ips) == 0 {
-		return "", fmt.Errorf("failed to resolve hostname '%s': %w", hostname, err)
-	}
-
-	// Find instance ID based on IP address
-	ip := ips[0].String()
-	instanceID, err := internal.FindInstanceIdByIp(ctx, *credential.awsConfig, ip)
+	parts, err := shellquote.Split(scpArgs)
 	if err != nil {
-		return "", fmt.Errorf("failed to find instance by IP '%s': %w", ip, err)
+		return "", fmt.Errorf("invalid SCP arguments: %w", err)
 	}
 
-	if instanceID == "" {
-		return "", fmt.Errorf("no matching instance found for IP '%s'", ip)
+	hostname, err := hostFromSCPArgs(parts)
+	if err != nil {
+		return "", err
 	}
 
-	return instanceID, nil
+	return resolveTargetHost(ctx, hostname)
+}
+
+// hostFromSCPArgs extracts the remote host (user@host:path) from parsed scp
+// arguments, checking the destination first and then the source.
+func hostFromSCPArgs(parts []string) (string, error) {
+	if len(parts) < 2 {
+		return "", errors.New("invalid SCP arguments: must include source and destination")
+	}
+	for _, arg := range []string{parts[len(parts)-1], parts[len(parts)-2]} {
+		segs := strings.Split(arg, ":")
+		if len(segs) < 2 {
+			continue
+		}
+		hostParts := strings.Split(segs[0], "@")
+		if len(hostParts) == 2 && hostParts[1] != "" {
+			return hostParts[1], nil
+		}
+	}
+	return "", errors.New("could not identify target hostname in SCP arguments")
 }
 
 // displaySCPCommandInfo shows information about the SCP operation
@@ -209,13 +192,12 @@ func executeSCPCommand(scpArgs string, session *ssm.StartSessionOutput, targetIn
 		string(paramsJSON),
 	)
 
-	// Build SCP command arguments
-	args := []string{"-o", proxyCommand}
-	for arg := range strings.FieldsSeq(scpArgs) {
-		if arg != "" {
-			args = append(args, arg)
-		}
+	// Build SCP command arguments, respecting quoted segments
+	parsedArgs, err := shellquote.Split(scpArgs)
+	if err != nil {
+		return fmt.Errorf("invalid SCP arguments: %w", err)
 	}
+	args := append([]string{"-o", proxyCommand}, parsedArgs...)
 
 	// Execute SCP command
 	return internal.CallProcess("scp", args...)
