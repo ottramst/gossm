@@ -1,20 +1,13 @@
-FROM golang:alpine as builder
+# Used by GoReleaser's dockers_v2 section: prebuilt binaries are placed in
+# the build context under $TARGETPLATFORM (e.g. linux/amd64/gossm), so no Go
+# toolchain stage is needed.
+#
+# The base image must ship glibc and CA certificates: gossm extracts and runs
+# the AWS session-manager-plugin, which is dynamically linked against glibc
+# (scratch/alpine/distroless-static cannot run it).
+FROM gcr.io/distroless/base-debian12:latest
 
-WORKDIR /build
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/gossm /usr/local/bin/gossm
 
-ADD . .
-
-RUN apk update && apk add --no-cache \
-      git \
-      ca-certificates  \
-    && update-ca-certificates \
-    && CGO_ENABLED=0 go build -ldflags='-w -s -extldflags "-static"' -a -o /build/gossm .
-
-FROM scratch
-
-ENV PATH /go/bin
-
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /build/ /go/bin/
-
-CMD [ "/go/bin/gossm" ]
+ENTRYPOINT ["/usr/local/bin/gossm"]
