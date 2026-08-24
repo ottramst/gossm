@@ -3,14 +3,10 @@
 `gossm` is an interactive CLI tool that lets you select servers in AWS and connect to them or transfer files using start-session, ssh, or scp through AWS Systems Manager Session Manager.
 
 <p align="center">
-<img src="https://storage.googleapis.com/gjbae1212-asset/gossm/start.gif" width="500", height="450" />
-</p>
-
-<p align="center"/>
-<a href="https://circleci.com/gh/gjbae1212/gossm"><img src="https://circleci.com/gh/gjbae1212/gossm.svg?style=svg"></a>
-<a href="https://hits.seeyoufarm.com"/><img src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fgjbae1212%2Fgossm"/></a>
-<a href="/LICENSE"><img src="https://img.shields.io/badge/license-MIT-GREEN.svg" alt="license" /></a>
-<a href="https://goreportcard.com/report/github.com/gjbae1212/gossm"><img src="https://goreportcard.com/badge/github.com/gjbae1212/gossm" alt="Go Report Card"/></a>
+<a href="https://github.com/ottramst/gossm/actions/workflows/ci.yml"><img src="https://github.com/ottramst/gossm/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+<a href="https://github.com/ottramst/gossm/releases/latest"><img src="https://img.shields.io/github/v/release/ottramst/gossm" alt="Latest release" /></a>
+<a href="https://goreportcard.com/report/github.com/ottramst/gossm"><img src="https://goreportcard.com/badge/github.com/ottramst/gossm" alt="Go Report Card" /></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT" /></a>
 </p>
 
 ## Overview
@@ -74,6 +70,12 @@ AWS credentials must be provided to the container: mount `~/.aws` as shown, or p
 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_REGION` with `-e`. The `-it` flags are
 required for the interactive prompts and the session terminal.
 
+### Go
+
+```sh
+go install github.com/ottramst/gossm@latest
+```
+
 ## Usage
 
 ### Global Command Arguments
@@ -121,10 +123,6 @@ $ gossm ssh -i ~/.ssh/key.pem
 $ gossm ssh -e "ec2-user@i-1234567890abcdef0"
 $ gossm ssh -e "-i key.pem ec2-user@i-1234567890abcdef0"
 ```
-
-<p align="center">
-<img src="https://storage.googleapis.com/gjbae1212-asset/gossm/ssh.gif" width="500", height="450" />
-</p>
 
 #### `scp`
 
@@ -180,13 +178,12 @@ $ gossm mfa 123456
 # Set custom expiration time (in seconds)
 $ gossm mfa -d 43200 123456  # 12 hours
 
+# Specify the MFA device serial explicitly
+$ gossm mfa -m arn:aws:iam::123456789012:mfa/my-device 123456
+
 # For AWS CLI to use these credentials, set in your shell profile:
 export AWS_SHARED_CREDENTIALS_FILE=$HOME/.aws/credentials_mfa
 ```
-
-<p align="center">
-<img src="https://storage.googleapis.com/gjbae1212-asset/gossm/mfa.png" />
-</p>
 
 ## Plugin System
 
@@ -196,6 +193,18 @@ export AWS_SHARED_CREDENTIALS_FILE=$HOME/.aws/credentials_mfa
 - You can specify a specific plugin version by setting the `GOSSM_PLUGIN_VERSION` environment variable
 - If download fails, it will use the embedded plugin as a fallback
 
+## Contributing
+
+Pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+PR-title convention, local development commands, and the release process.
+
+## Acknowledgements
+
+gossm is a maintained fork of [gjbae1212/gossm](https://github.com/gjbae1212/gossm),
+whose author designed and built the original tool. This fork continues development
+with modernized tooling, automated releases, and new distribution channels.
+
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+The original work is copyright gjbae1212; modifications in this fork are copyright Ott Ramst.
