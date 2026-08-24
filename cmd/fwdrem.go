@@ -2,13 +2,11 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/ottramst/gossm/internal"
@@ -83,8 +81,7 @@ func getRemoteHost(flagHost string) (string, error) {
 
 // startRemoteHostPortForwardingSession creates and starts an SSM port forwarding session to a remote host
 func startRemoteHostPortForwardingSession(ctx context.Context, target *internal.Target, localPort, remotePort, host string) error {
-	// Prepare SSM input for port forwarding
-	sessionInput := &ssm.StartSessionInput{
+	return runPluginSession(ctx, &ssm.StartSessionInput{
 		DocumentName: aws.String(documentNameRemotePortForwarding),
 		Parameters: map[string][]string{
 			"portNumber":      {remotePort},
@@ -92,45 +89,7 @@ func startRemoteHostPortForwardingSession(ctx context.Context, target *internal.
 			"host":            {host},
 		},
 		Target: aws.String(target.Name),
-	}
-
-	// Create the session
-	session, err := internal.CreateStartSession(ctx, *credential.awsConfig, sessionInput)
-	if err != nil {
-		return fmt.Errorf("failed to create session: %w", err)
-	}
-
-	// Marshal session and parameters to JSON for the SSM plugin
-	sessionJSON, err := json.Marshal(session)
-	if err != nil {
-		return fmt.Errorf("failed to marshal session: %w", err)
-	}
-
-	paramsJSON, err := json.Marshal(sessionInput)
-	if err != nil {
-		return fmt.Errorf("failed to marshal parameters: %w", err)
-	}
-
-	// Call the SSM plugin to start the port forwarding
-	if err := internal.CallProcess(
-		credential.ssmPluginPath,
-		string(sessionJSON),
-		credential.awsConfig.Region,
-		"StartSession",
-		credential.awsProfile,
-		string(paramsJSON),
-	); err != nil {
-		color.Red("[err] %v", err.Error())
-	}
-
-	// Clean up by terminating the session
-	if err := internal.DeleteStartSession(ctx, *credential.awsConfig, &ssm.TerminateSessionInput{
-		SessionId: session.SessionId,
-	}); err != nil {
-		return fmt.Errorf("failed to terminate session: %w", err)
-	}
-
-	return nil
+	})
 }
 
 // init initializes the fwdrem command

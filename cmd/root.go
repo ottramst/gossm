@@ -184,7 +184,7 @@ func setupAWSCredentials(awsProfile, awsRegion string) {
 
 	// Use AWS SDK's built-in credential chain with our profile
 	configOpts := []func(*config.LoadOptions) error{
-		config.WithSharedConfigProfile(credential.awsProfile),
+		config.WithSharedConfigProfile(awsProfile),
 	}
 	if isMFA {
 		// Force base credentials even if the user exported

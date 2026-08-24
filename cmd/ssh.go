@@ -8,7 +8,6 @@ import (
 	"net"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/fatih/color"
 	"github.com/kballard/go-shellquote"
@@ -63,7 +62,7 @@ func runSSHCommand(cmd *cobra.Command, args []string) {
 	}
 
 	// Execute the SSH command
-	if err := executeSSHCommand(sshArgs, session, targetName); err != nil {
+	if err := runProxiedCommand("ssh", sshArgs, session, sshSessionInput(targetName)); err != nil {
 		color.Red("%v", err)
 	}
 
@@ -184,28 +183,19 @@ func resolveTargetHost(ctx context.Context, host string) (string, error) {
 	return instanceID, nil
 }
 
-// executeSSHCommand executes the SSH command with SSM as proxy
-func executeSSHCommand(sshArgs string, session *ssm.StartSessionOutput, targetName string) error {
-	// Marshal session information to JSON
+// runProxiedCommand executes ssh or scp with an SSM ProxyCommand option
+// followed by the user-supplied arguments. It is shared by ssh and scp.
+func runProxiedCommand(process, userArgs string, session *ssm.StartSessionOutput, input *ssm.StartSessionInput) error {
+	// Marshal session and parameters to JSON for the SSM plugin
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
 		return fmt.Errorf("failed to marshal session data: %w", err)
 	}
-
-	// Create parameter input for the SSM plugin
-	input := &ssm.StartSessionInput{
-		DocumentName: aws.String(documentNameSSH),
-		Parameters:   map[string][]string{"portNumber": {defaultSSHPort}},
-		Target:       aws.String(targetName),
-	}
-
-	// Marshal parameters to JSON
 	paramsJSON, err := json.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("failed to marshal session parameters: %w", err)
 	}
 
-	// Build proxy command for SSH
 	proxyCommand := fmt.Sprintf("ProxyCommand=%s '%s' %s %s %s '%s'",
 		credential.ssmPluginPath,
 		string(sessionJSON),
@@ -215,15 +205,13 @@ func executeSSHCommand(sshArgs string, session *ssm.StartSessionOutput, targetNa
 		string(paramsJSON),
 	)
 
-	// Build SSH command arguments, respecting quoted segments
-	parsedArgs, err := shellquote.Split(sshArgs)
+	// Build the command arguments, respecting quoted segments
+	parsedArgs, err := shellquote.Split(userArgs)
 	if err != nil {
-		return fmt.Errorf("invalid SSH arguments: %w", err)
+		return fmt.Errorf("invalid %s arguments: %w", process, err)
 	}
-	cmdArgs := append([]string{"-o", proxyCommand}, parsedArgs...)
 
-	// Execute SSH command
-	return internal.CallProcess("ssh", cmdArgs...)
+	return internal.CallProcess(process, append([]string{"-o", proxyCommand}, parsedArgs...)...)
 }
 
 func init() {

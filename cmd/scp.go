@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -73,7 +72,7 @@ func runSCPCommand(cmd *cobra.Command, args []string) {
 	}
 
 	// Execute SCP command with SSM as proxy
-	err = executeSCPCommand(scpArgs, session, targetInstanceID)
+	err = runProxiedCommand("scp", scpArgs, session, sshSessionInput(targetInstanceID))
 	if err != nil {
 		color.Red("%v", err)
 	}
@@ -145,62 +144,24 @@ func displaySCPCommandInfo(scpArgs, targetInstanceID string) {
 	color.Cyan("scp %s", scpArgs)
 }
 
-// startSSHSession starts an SSH session through SSM
-func startSSHSession(ctx context.Context, targetInstanceID string) (*ssm.StartSessionOutput, error) {
-	input := &ssm.StartSessionInput{
+// sshSessionInput builds the SSM session input for tunneling SSH (and SCP)
+// to the given instance.
+func sshSessionInput(targetInstanceID string) *ssm.StartSessionInput {
+	return &ssm.StartSessionInput{
 		DocumentName: aws.String(documentNameSSH),
 		Parameters:   map[string][]string{"portNumber": {defaultSSHPort}},
 		Target:       aws.String(targetInstanceID),
 	}
+}
 
-	session, err := internal.CreateStartSession(ctx, *credential.awsConfig, input)
+// startSSHSession starts an SSH session through SSM
+func startSSHSession(ctx context.Context, targetInstanceID string) (*ssm.StartSessionOutput, error) {
+	session, err := internal.CreateStartSession(ctx, *credential.awsConfig, sshSessionInput(targetInstanceID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSM session: %w", err)
 	}
 
 	return session, nil
-}
-
-// executeSCPCommand executes the SCP command with SSM as proxy
-func executeSCPCommand(scpArgs string, session *ssm.StartSessionOutput, targetInstanceID string) error {
-	// Marshal session information to JSON
-	sessionJSON, err := json.Marshal(session)
-	if err != nil {
-		return fmt.Errorf("failed to marshal session data: %w", err)
-	}
-
-	// Create parameter input for the SSM plugin
-	input := &ssm.StartSessionInput{
-		DocumentName: aws.String(documentNameSSH),
-		Parameters:   map[string][]string{"portNumber": {defaultSSHPort}},
-		Target:       aws.String(targetInstanceID),
-	}
-
-	// Marshal parameters to JSON
-	paramsJSON, err := json.Marshal(input)
-	if err != nil {
-		return fmt.Errorf("failed to marshal session parameters: %w", err)
-	}
-
-	// Build proxy command for SCP
-	proxyCommand := fmt.Sprintf("ProxyCommand=%s '%s' %s %s %s '%s'",
-		credential.ssmPluginPath,
-		string(sessionJSON),
-		credential.awsConfig.Region,
-		"StartSession",
-		credential.awsProfile,
-		string(paramsJSON),
-	)
-
-	// Build SCP command arguments, respecting quoted segments
-	parsedArgs, err := shellquote.Split(scpArgs)
-	if err != nil {
-		return fmt.Errorf("invalid SCP arguments: %w", err)
-	}
-	args := append([]string{"-o", proxyCommand}, parsedArgs...)
-
-	// Execute SCP command
-	return internal.CallProcess("scp", args...)
 }
 
 func init() {
