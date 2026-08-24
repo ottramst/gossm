@@ -54,10 +54,13 @@ homebrew_casks:
     repository:
       owner: ottramst
       name: homebrew-tap
-      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
+      # .Env requires the variable to be DEFINED (the release workflow always
+      # defines it, empty when the secret is missing); envOrDefault is not
+      # available in the GoReleaser version the action resolves.
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/ottramst/gossm
     description: Interactive CLI for AWS SSM Session Manager
-    skip_upload: '{{ if envOrDefault "HOMEBREW_TAP_TOKEN" "" }}auto{{ else }}true{{ end }}'
+    skip_upload: "{{ if .Env.HOMEBREW_TAP_TOKEN }}auto{{ else }}true{{ end }}"
     commit_author:
       name: github-actions[bot]
       email: 41898282+github-actions[bot]@users.noreply.github.com
