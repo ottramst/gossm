@@ -91,21 +91,25 @@ func getMFADevice(ctx context.Context, flagDevice string) (string, error) {
 		return device, nil
 	}
 
-	// If not specified, get the user's virtual MFA device
+	// If not specified, derive the virtual MFA device from the caller identity
 	client := sts.NewFromConfig(*credential.awsConfig)
 	identity, err := client.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return "", fmt.Errorf("failed to get identity: %w", err)
 	}
 
-	// Extract username from ARN
-	arnParts := strings.Split(*identity.Arn, "/")
-	if len(arnParts) < 2 {
-		return "", fmt.Errorf("unexpected ARN format: %s", *identity.Arn)
-	}
-	username := arnParts[len(arnParts)-1]
+	return mfaSerialFromIdentity(aws.ToString(identity.Arn), aws.ToString(identity.Account))
+}
 
-	return fmt.Sprintf(virtualMFADevice, aws.ToString(identity.Account), username), nil
+// mfaSerialFromIdentity derives the virtual MFA device ARN from an IAM user
+// identity. Assumed roles and other identity types have no derivable device.
+func mfaSerialFromIdentity(identityArn, account string) (string, error) {
+	if !strings.Contains(identityArn, ":user/") {
+		return "", fmt.Errorf("cannot derive an MFA device from identity %q (not an IAM user); pass --device explicitly", identityArn)
+	}
+	parts := strings.Split(identityArn, "/")
+	username := parts[len(parts)-1]
+	return fmt.Sprintf(virtualMFADevice, account, username), nil
 }
 
 // getTemporaryCredentials gets temporary credentials using the MFA token

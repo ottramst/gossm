@@ -156,24 +156,41 @@ func setupSsmPlugin(plugin []byte) {
 	}
 }
 
+// applyMFACredentialsFile points AWS_SHARED_CREDENTIALS_FILE at the gossm MFA
+// credentials file when it exists and the variable is not already set.
+func applyMFACredentialsFile() {
+	if _, err := os.Stat(credentialWithMFA); err == nil && os.Getenv("AWS_SHARED_CREDENTIALS_FILE") == "" {
+		color.Yellow("[Use] gossm default mfa credential file %s", credentialWithMFA)
+		_ = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", credentialWithMFA)
+	}
+}
+
 // setupAWSCredentials sets up AWS credentials using the AWS SDK's credential chain
 func setupAWSCredentials(awsProfile, awsRegion string) {
 	// Validate the invoked subcommand before touching credentials
 	args := os.Args[1:]
-	_, _, err := rootCmd.Find(args)
+	subcmd, _, err := rootCmd.Find(args)
 	if err != nil {
 		logErrorAndExit(internal.WrapError(err))
 	}
+	isMFA := subcmd.Name() == "mfa"
 
-	// Check for special MFA credentials file
-	if _, err := os.Stat(credentialWithMFA); err == nil && os.Getenv("AWS_SHARED_CREDENTIALS_FILE") == "" {
-		color.Yellow("[Use] gossm default mfa credential file %s", credentialWithMFA)
-		_ = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", credentialWithMFA)
+	// Point the SDK at the MFA credentials file when one exists — except for
+	// the mfa command itself, which must authenticate with base credentials
+	// or renewing expired temporary credentials becomes impossible.
+	if !isMFA {
+		applyMFACredentialsFile()
 	}
 
 	// Use AWS SDK's built-in credential chain with our profile
 	configOpts := []func(*config.LoadOptions) error{
 		config.WithSharedConfigProfile(credential.awsProfile),
+	}
+	if isMFA {
+		// Force base credentials even if the user exported
+		// AWS_SHARED_CREDENTIALS_FILE pointing at the MFA file.
+		configOpts = append(configOpts,
+			config.WithSharedCredentialsFiles([]string{config.DefaultSharedCredentialsFilename()}))
 	}
 
 	// Add region if specified
