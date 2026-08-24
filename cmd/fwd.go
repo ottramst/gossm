@@ -2,13 +2,11 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/ottramst/gossm/internal"
@@ -114,53 +112,14 @@ func portConfiguration(flagRemote, flagLocal string) (localPort, remotePort stri
 
 // startPortForwardingSession creates and starts an SSM port forwarding session
 func startPortForwardingSession(ctx context.Context, target *internal.Target, localPort, remotePort string) error {
-	// Prepare SSM input for port forwarding
-	sessionInput := &ssm.StartSessionInput{
+	return runPluginSession(ctx, &ssm.StartSessionInput{
 		DocumentName: aws.String(documentNamePortForwarding),
 		Parameters: map[string][]string{
 			"portNumber":      {remotePort},
 			"localPortNumber": {localPort},
 		},
 		Target: aws.String(target.Name),
-	}
-
-	// Create the session
-	session, err := internal.CreateStartSession(ctx, *credential.awsConfig, sessionInput)
-	if err != nil {
-		return fmt.Errorf("failed to create session: %w", err)
-	}
-
-	// Marshal session and parameters to JSON for the SSM plugin
-	sessionJSON, err := json.Marshal(session)
-	if err != nil {
-		return fmt.Errorf("failed to marshal session: %w", err)
-	}
-
-	paramsJSON, err := json.Marshal(sessionInput)
-	if err != nil {
-		return fmt.Errorf("failed to marshal parameters: %w", err)
-	}
-
-	// Call the SSM plugin to start the port forwarding
-	if err := internal.CallProcess(
-		credential.ssmPluginPath,
-		string(sessionJSON),
-		credential.awsConfig.Region,
-		"StartSession",
-		credential.awsProfile,
-		string(paramsJSON),
-	); err != nil {
-		color.Red("[err] %v", err.Error())
-	}
-
-	// Clean up by terminating the session
-	if err := internal.DeleteStartSession(ctx, *credential.awsConfig, &ssm.TerminateSessionInput{
-		SessionId: session.SessionId,
-	}); err != nil {
-		return fmt.Errorf("failed to terminate session: %w", err)
-	}
-
-	return nil
+	})
 }
 
 func init() {

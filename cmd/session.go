@@ -49,62 +49,44 @@ func runStartSession(cmd *cobra.Command, args []string) {
 	// Display information
 	internal.PrintReady("start-session", credential.awsConfig.Region, target.Name)
 
-	// Start session
-	session, err := createSession(ctx, target.Name)
-	if err != nil {
-		logErrorAndExit(err)
-	}
-
-	// Execute session
-	if err := executeSession(session, target.Name); err != nil {
-		color.Red("%v", err)
-	}
-
-	// Clean up
-	if err := terminateSession(ctx, session.SessionId); err != nil {
+	// Run the interactive session through the SSM plugin
+	if err := runPluginSession(ctx, &ssm.StartSessionInput{
+		Target: aws.String(target.Name),
+	}); err != nil {
 		logErrorAndExit(err)
 	}
 }
 
-// createSession creates a new SSM session to the target instance
-func createSession(ctx context.Context, targetName string) (*ssm.StartSessionOutput, error) {
-	input := &ssm.StartSessionInput{
-		Target: aws.String(targetName),
-	}
-
+// runPluginSession creates an SSM session from the given input, drives the
+// session-manager-plugin with it, and terminates the session afterwards.
+// It is shared by the start, fwd, and fwdrem commands.
+func runPluginSession(ctx context.Context, input *ssm.StartSessionInput) error {
 	session, err := internal.CreateStartSession(ctx, *credential.awsConfig, input)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		return fmt.Errorf("failed to create session: %w", err)
 	}
 
-	return session, nil
-}
-
-// executeSession executes the interactive session using the SSM plugin
-func executeSession(session *ssm.StartSessionOutput, targetName string) error {
-	// Marshal session to JSON
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
 		return fmt.Errorf("failed to marshal session: %w", err)
 	}
-
-	// Marshal session parameters to JSON
-	paramsJSON, err := json.Marshal(&ssm.StartSessionInput{
-		Target: aws.String(targetName),
-	})
+	paramsJSON, err := json.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("failed to marshal session parameters: %w", err)
 	}
 
-	// Execute the session
-	return internal.CallProcess(
+	if err := internal.CallProcess(
 		credential.ssmPluginPath,
 		string(sessionJSON),
 		credential.awsConfig.Region,
 		"StartSession",
 		credential.awsProfile,
 		string(paramsJSON),
-	)
+	); err != nil {
+		color.Red("%v", err)
+	}
+
+	return terminateSession(ctx, session.SessionId)
 }
 
 // terminateSession terminates the SSM session

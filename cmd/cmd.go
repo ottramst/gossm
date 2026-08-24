@@ -30,31 +30,16 @@ var (
 	}
 )
 
-// findSpecificTarget looks for a specific target by name
-func findSpecificTarget(ctx context.Context, targetName string) ([]*internal.Target, error) {
-	// Get all available instances
-	allInstances, err := internal.FindInstances(ctx, *credential.awsConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	// Find the specified target
-	for _, instance := range allInstances {
-		if instance.Name == targetName {
-			return []*internal.Target{instance}, nil
-		}
-	}
-
-	// If we get here, the specified target wasn't found
-	return nil, fmt.Errorf("target instance '%s' not found", targetName)
-}
-
 // findTargetInstances identifies the instances to target for command
 // execution, using the given flag value or prompting when it is empty
 func findTargetInstances(ctx context.Context, flagTarget string) ([]*internal.Target, error) {
 	argTarget := strings.TrimSpace(flagTarget)
 	if argTarget != "" {
-		return findSpecificTarget(ctx, argTarget)
+		target, err := findSpecificInstance(ctx, argTarget)
+		if err != nil {
+			return nil, err
+		}
+		return []*internal.Target{target}, nil
 	}
 
 	// If no specific target, prompt user to select targets
