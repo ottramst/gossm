@@ -2,6 +2,11 @@
 
 version: 2
 
+# Pin SCM detection to GitHub: without this, GoReleaser infers the release
+# host from whichever token env var it finds (a stray GITLAB_TOKEN in a
+# local shell produces gitlab.com download URLs in the Homebrew cask).
+force_token: github
+
 before:
   hooks:
     - go mod tidy
@@ -42,6 +47,29 @@ archives:
         formats: [zip]
 
 # Release notes are grouped by Conventional Commit type.
+# Pushes the cask to ottramst/homebrew-tap. Skipped gracefully when the
+# HOMEBREW_TAP_TOKEN secret is not configured; "auto" skips prereleases.
+homebrew_casks:
+  - name: gossm
+    repository:
+      owner: ottramst
+      name: homebrew-tap
+      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
+    homepage: https://github.com/ottramst/gossm
+    description: Interactive CLI for AWS SSM Session Manager
+    skip_upload: '{{ if envOrDefault "HOMEBREW_TAP_TOKEN" "" }}auto{{ else }}true{{ end }}'
+    commit_author:
+      name: github-actions[bot]
+      email: 41898282+github-actions[bot]@users.noreply.github.com
+    # The release binaries are unsigned; clear the quarantine flag so
+    # Gatekeeper doesn't block the first run.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gossm"]
+          end
+
 dockers_v2:
   - images:
       - ghcr.io/ottramst/gossm
