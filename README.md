@@ -49,9 +49,14 @@ AWS Systems Manager Session Manager uses SSH protocol tunneling for secure commu
 
 ## Installation
 
-### Homebrew
+### Homebrew (macOS)
 
-Homebrew is not supported yet.
+```sh
+brew install --cask ottramst/tap/gossm
+```
+
+The cask is updated automatically on every release. Homebrew casks are
+macOS-only; on Linux use the [container image](#container) or a binary release.
 
 ### Download Binary
 
