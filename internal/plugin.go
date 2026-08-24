@@ -1,6 +1,7 @@
 package internal
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,12 @@ import (
 
 // defaultPluginVersion is used when no specific version is requested
 const defaultPluginVersion = "latest"
+
+// embeddedPluginVersion tracks which plugin version the embed_*.go binaries
+// carry; the Update Plugin workflow keeps it in sync with the binaries.
+//
+//go:embed assets/plugin/VERSION
+var embeddedPluginVersion string
 
 // GetSsmPluginName returns filename for AWS SSM plugin
 func GetSsmPluginName() string {
@@ -103,7 +110,7 @@ func getEmbeddedPlugin(pluginDir string) ([]byte, error) {
 
 	// Save plugin info
 	info := PluginInfo{
-		Version:     "embedded",
+		Version:     strings.TrimSpace(embeddedPluginVersion),
 		InstallDate: time.Now(),
 		Source:      "embedded",
 		Hash:        hash,

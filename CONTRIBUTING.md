@@ -43,3 +43,11 @@ changes through PRs with passing checks.
 Run the **Release** workflow from the Actions tab with a `vX.Y.Z`
 version (it tags `master` and publishes via GoReleaser), or push a
 `vX.Y.Z` tag by hand. Tags always carry the `v` prefix.
+
+## Embedded plugin updates
+
+The session-manager-plugin binaries under `internal/assets/plugin/` are kept
+current automatically: the **Update Plugin** workflow compares the tracked
+version (`internal/assets/plugin/VERSION`) against AWS's latest every Monday
+and opens a PR built by `scripts/update-plugins.sh`. CI does not start
+automatically on that PR — close and reopen it to trigger the checks.
