@@ -118,7 +118,7 @@ func init() {
 	startSessionCommand.Flags().StringP("target", "t", "", "Target EC2 instance ID (will prompt if not specified)")
 
 	// Bind flags to viper
-	viper.BindPFlag("start-session-target", startSessionCommand.Flags().Lookup("target"))
+	_ = viper.BindPFlag("start-session-target", startSessionCommand.Flags().Lookup("target"))
 
 	// Add command to root
 	rootCmd.AddCommand(startSessionCommand)

@@ -163,8 +163,8 @@ func init() {
 		"MFA device ARN (default: your virtual MFA device)")
 
 	// Bind flags to viper
-	viper.BindPFlag("mfa-deadline", mfaCommand.Flags().Lookup("deadline"))
-	viper.BindPFlag("mfa-device", mfaCommand.Flags().Lookup("device"))
+	_ = viper.BindPFlag("mfa-deadline", mfaCommand.Flags().Lookup("deadline"))
+	_ = viper.BindPFlag("mfa-device", mfaCommand.Flags().Lookup("device"))
 
 	// Add command to root
 	rootCmd.AddCommand(mfaCommand)

@@ -123,12 +123,12 @@ func GetPluginDirectory() string {
 func getEmbeddedPlugin(pluginDir string) ([]byte, error) {
 	goos := strings.ToLower(runtime.GOOS)
 	goarch := strings.ToLower(runtime.GOARCH)
-	
+
 	// Windows ARM64 uses the AMD64 binary (via emulation)
 	if goos == "windows" && goarch == "arm64" {
 		goarch = "amd64"
 	}
-	
+
 	pluginKey := fmt.Sprintf("plugin/%s_%s/%s",
 		goos,
 		goarch,
@@ -193,7 +193,7 @@ func downloadPlugin(pluginDir string, version string) error {
 	if err != nil {
 		return fmt.Errorf("plugin download failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("plugin download failed with status: %s", resp.Status)
@@ -205,11 +205,13 @@ func downloadPlugin(pluginDir string, version string) error {
 		return fmt.Errorf("failed to create temporary file: %w", err)
 	}
 	tempFilePath := tempFile.Name()
-	defer os.Remove(tempFilePath) // Clean up temporary file
+	defer func() { _ = os.Remove(tempFilePath) }() // Clean up temporary file
 
 	// Copy downloaded content to temporary file
 	_, err = io.Copy(tempFile, resp.Body)
-	tempFile.Close()
+	if cerr := tempFile.Close(); err == nil {
+		err = cerr
+	}
 	if err != nil {
 		return fmt.Errorf("failed to save downloaded file: %w", err)
 	}
@@ -361,7 +363,7 @@ func extractFromDeb(debPath, destDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Use ar to extract the data.tar.gz file
 	cmd := exec.Command("ar", "x", debPath, "data.tar.gz")
@@ -377,13 +379,13 @@ func extractFromDeb(debPath, destDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open data.tar.gz: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	gzr, err := gzip.NewReader(file)
 	if err != nil {
 		return "", fmt.Errorf("failed to create gzip reader: %w", err)
 	}
-	defer gzr.Close()
+	defer func() { _ = gzr.Close() }()
 
 	tr := tar.NewReader(gzr)
 
@@ -406,10 +408,13 @@ func extractFromDeb(debPath, destDir string) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("failed to create output file: %w", err)
 			}
-			defer out.Close()
 
 			if _, err := io.Copy(out, tr); err != nil {
+				_ = out.Close()
 				return "", fmt.Errorf("failed to write binary: %w", err)
+			}
+			if err := out.Close(); err != nil {
+				return "", fmt.Errorf("failed to close output file: %w", err)
 			}
 
 			if err := os.Chmod(destPath, 0755); err != nil {
@@ -438,7 +443,7 @@ func extractFromRpm(rpmPath, destDir string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to create temp directory: %w", err)
 		}
-		defer os.RemoveAll(tempDir)
+		defer func() { _ = os.RemoveAll(tempDir) }()
 
 		// Use rpm2cpio and cpio to extract files
 		cmd1 := exec.Command("rpm2cpio", rpmPath)
@@ -488,7 +493,7 @@ func extractFromPkg(pkgPath, destDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Use pkgutil to expand the package
 	// First try --expand-full for newer macOS versions
@@ -511,7 +516,7 @@ func extractFromPkg(pkgPath, destDir string) (string, error) {
 			}
 		}
 	}
-	
+
 	// Update base directory for searching
 	searchDir := filepath.Join(tempDir, "expanded")
 
@@ -559,7 +564,7 @@ func extractFromPkg(pkgPath, destDir string) (string, error) {
 
 	// Copy the plugin to the destination directory
 	destPath := filepath.Join(destDir, "session-manager-plugin")
-	
+
 	// Read the plugin file
 	pluginData, err := os.ReadFile(pluginPath)
 	if err != nil {
@@ -581,10 +586,10 @@ func extractFromZip(zipPath, destDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open zip file: %w", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	destPath := filepath.Join(destDir, GetSsmPluginName())
-	
+
 	// Check if this is a nested zip (contains package.zip)
 	var packageZip *zip.File
 	for _, file := range reader.File {
@@ -593,7 +598,7 @@ func extractFromZip(zipPath, destDir string) (string, error) {
 			break
 		}
 	}
-	
+
 	// If we found package.zip, extract from it
 	if packageZip != nil {
 		// Open the nested package.zip
@@ -601,48 +606,51 @@ func extractFromZip(zipPath, destDir string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to open package.zip: %w", err)
 		}
-		defer rc.Close()
-		
+		defer func() { _ = rc.Close() }()
+
 		// Read the entire nested zip into memory
 		nestedData, err := io.ReadAll(rc)
 		if err != nil {
 			return "", fmt.Errorf("failed to read package.zip: %w", err)
 		}
-		
+
 		// Create a reader for the nested zip
 		nestedReader, err := zip.NewReader(bytes.NewReader(nestedData), int64(len(nestedData)))
 		if err != nil {
 			return "", fmt.Errorf("failed to open nested zip: %w", err)
 		}
-		
+
 		// Look for the binary in the nested zip
 		for _, file := range nestedReader.File {
 			// Look for various possible locations
 			if file.Name == "bin/session-manager-plugin.exe" ||
-			   file.Name == "session-manager-plugin.exe" ||
-			   strings.HasSuffix(file.Name, "/session-manager-plugin.exe") {
-				
+				file.Name == "session-manager-plugin.exe" ||
+				strings.HasSuffix(file.Name, "/session-manager-plugin.exe") {
+
 				// Extract the binary
 				rc, err := file.Open()
 				if err != nil {
 					return "", fmt.Errorf("failed to open file in nested zip: %w", err)
 				}
-				defer rc.Close()
-				
+				defer func() { _ = rc.Close() }()
+
 				out, err := os.Create(destPath)
 				if err != nil {
 					return "", fmt.Errorf("failed to create destination file: %w", err)
 				}
-				defer out.Close()
-				
+
 				if _, err := io.Copy(out, rc); err != nil {
+					_ = out.Close()
 					return "", fmt.Errorf("failed to extract file: %w", err)
 				}
-				
+				if err := out.Close(); err != nil {
+					return "", fmt.Errorf("failed to close destination file: %w", err)
+				}
+
 				return destPath, nil
 			}
 		}
-		
+
 		// Debug: list files in nested zip
 		var nestedFiles []string
 		for _, file := range nestedReader.File {
@@ -650,27 +658,30 @@ func extractFromZip(zipPath, destDir string) (string, error) {
 		}
 		return "", fmt.Errorf("session-manager-plugin.exe not found in package.zip. Found files: %v", nestedFiles)
 	}
-	
+
 	// Fallback: look in the main zip
 	for _, file := range reader.File {
-		if file.Name == "session-manager-plugin.exe" || 
-		   strings.HasSuffix(file.Name, "/session-manager-plugin.exe") ||
-		   strings.HasSuffix(file.Name, "\\session-manager-plugin.exe") {
-			
+		if file.Name == "session-manager-plugin.exe" ||
+			strings.HasSuffix(file.Name, "/session-manager-plugin.exe") ||
+			strings.HasSuffix(file.Name, "\\session-manager-plugin.exe") {
+
 			rc, err := file.Open()
 			if err != nil {
 				return "", fmt.Errorf("failed to open file in zip: %w", err)
 			}
-			defer rc.Close()
+			defer func() { _ = rc.Close() }()
 
 			out, err := os.Create(destPath)
 			if err != nil {
 				return "", fmt.Errorf("failed to create destination file: %w", err)
 			}
-			defer out.Close()
 
 			if _, err := io.Copy(out, rc); err != nil {
+				_ = out.Close()
 				return "", fmt.Errorf("failed to extract file: %w", err)
+			}
+			if err := out.Close(); err != nil {
+				return "", fmt.Errorf("failed to close destination file: %w", err)
 			}
 
 			return destPath, nil
@@ -682,7 +693,7 @@ func extractFromZip(zipPath, destDir string) (string, error) {
 	for _, file := range reader.File {
 		foundFiles = append(foundFiles, file.Name)
 	}
-	
+
 	return "", fmt.Errorf("session-manager-plugin.exe not found in zip. Found files: %v", foundFiles)
 }
 
@@ -696,7 +707,7 @@ func getLatestVersion() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch latest version: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("version check failed with status: %s", resp.Status)

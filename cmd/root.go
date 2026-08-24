@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/fatih/color"
-	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -114,7 +113,7 @@ func getAWSProfile() string {
 
 // setupGossmHomeAndPlugin sets up the gossm home directory and SSM plugin
 func setupGossmHomeAndPlugin() {
-	home, err := homedir.Dir()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		logErrorAndExit(internal.WrapError(err))
 	}
@@ -169,7 +168,7 @@ func setupAWSCredentials(awsProfile, awsRegion string) {
 	// Check for special MFA credentials file
 	if _, err := os.Stat(credentialWithMFA); err == nil && os.Getenv("AWS_SHAREDcredentialS_FILE") == "" {
 		color.Yellow("[Use] gossm default mfa credential file %s", credentialWithMFA)
-		os.Setenv("AWS_SHAREDcredentialS_FILE", credentialWithMFA)
+		_ = os.Setenv("AWS_SHAREDcredentialS_FILE", credentialWithMFA)
 	}
 
 	// Use AWS SDK's built-in credential chain with our profile
@@ -216,6 +215,6 @@ func init() {
 	rootCmd.InitDefaultVersionFlag()
 
 	// Bind flags to viper for configuration
-	viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
-	viper.BindPFlag("region", rootCmd.PersistentFlags().Lookup("region"))
+	_ = viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
+	_ = viper.BindPFlag("region", rootCmd.PersistentFlags().Lookup("region"))
 }

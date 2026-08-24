@@ -131,11 +131,11 @@ func init() {
 	cmdCommand.Flags().StringP("target", "t", "", "Target EC2 instance name (optional, will prompt if not specified)")
 
 	// Mark required flags
-	cmdCommand.MarkFlagRequired("exec")
+	_ = cmdCommand.MarkFlagRequired("exec")
 
 	// Bind flags to viper
-	viper.BindPFlag("cmd-exec", cmdCommand.Flags().Lookup("exec"))
-	viper.BindPFlag("cmd-target", cmdCommand.Flags().Lookup("target"))
+	_ = viper.BindPFlag("cmd-exec", cmdCommand.Flags().Lookup("exec"))
+	_ = viper.BindPFlag("cmd-target", cmdCommand.Flags().Lookup("target"))
 
 	// Add command to root
 	rootCmd.AddCommand(cmdCommand)
