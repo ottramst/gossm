@@ -20,6 +20,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	"github.com/aws/smithy-go"
 	"github.com/fatih/color"
 )
 
@@ -71,6 +72,7 @@ type ec2API interface {
 type ssmAPI interface {
 	DescribeInstanceInformation(ctx context.Context, params *ssm.DescribeInstanceInformationInput, optFns ...func(*ssm.Options)) (*ssm.DescribeInstanceInformationOutput, error)
 	GetCommandInvocation(ctx context.Context, params *ssm.GetCommandInvocationInput, optFns ...func(*ssm.Options)) (*ssm.GetCommandInvocationOutput, error)
+	TerminateSession(ctx context.Context, params *ssm.TerminateSessionInput, optFns ...func(*ssm.Options)) (*ssm.TerminateSessionOutput, error)
 }
 
 // AskUser prompts the user to select an SSH username
@@ -409,14 +411,25 @@ func CreateStartSession(ctx context.Context, cfg aws.Config, input *ssm.StartSes
 
 // DeleteStartSession terminates an SSM session
 func DeleteStartSession(ctx context.Context, cfg aws.Config, input *ssm.TerminateSessionInput) error {
-	client := ssm.NewFromConfig(cfg)
+	return deleteStartSession(ctx, ssm.NewFromConfig(cfg), input)
+}
 
+func deleteStartSession(ctx context.Context, client ssmAPI, input *ssm.TerminateSessionInput) error {
 	fmt.Printf("%s %s\n",
 		color.YellowString("Delete Session"),
 		color.YellowString(aws.ToString(input.SessionId)))
 
-	_, err := client.TerminateSession(ctx, input)
-	if err != nil {
+	if _, err := client.TerminateSession(ctx, input); err != nil {
+		// A session that ended on its own (the plugin exiting normally) is
+		// already terminated server-side, and the API rejects terminating
+		// it again — that is success, not an error.
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
+			case "ValidationException", "DoesNotExistException":
+				return nil
+			}
+		}
 		return fmt.Errorf("failed to terminate session: %w", err)
 	}
 

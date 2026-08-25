@@ -11,6 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.322.0
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.73.7
 	github.com/aws/aws-sdk-go-v2/service/sts v1.45.7
+	github.com/aws/smithy-go v1.27.9
 	github.com/fatih/color v1.19.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/spf13/cobra v1.10.2
@@ -29,7 +30,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/signin v1.5.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.33.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.7 // indirect
-	github.com/aws/smithy-go v1.27.9 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
