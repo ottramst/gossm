@@ -38,9 +38,6 @@ transfers without requiring direct SSH access to the instance.
 Without --exec, an interactive flow guides you through the transfer: pick an
 instance, choose the direction, and enter the paths.
 
-Escape Sequence:
-  Enter ~.   Disconnect from the session (useful when network is stuck)
-
 Examples:
   gossm scp                                                        # guided interactive transfer
   gossm scp --exec "-i key.pem file.txt ec2-user@instance:/home/ec2-user/"
@@ -192,7 +189,7 @@ func buildInteractiveSCP(ctx context.Context) (string, string, error) {
 
 	scpArgs := shellquote.Join(transfer.args()...)
 
-	ok, err := internal.AskConfirm(fmt.Sprintf("Run: scp %s ?", scpArgs), true)
+	ok, err := internal.AskConfirm("Run: scp "+scpArgs, true)
 	if err != nil {
 		return "", "", err
 	}

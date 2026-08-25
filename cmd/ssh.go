@@ -27,7 +27,7 @@ This command allows you to establish SSH connections without requiring inbound p
 or public IP addresses to be assigned to the instances.
 
 Escape Sequence:
-  Enter ~.   Disconnect from the session (useful when network is stuck)
+  Enter ~.   Disconnect (ssh's built-in escape; useful when network is stuck)
 
 Examples:
   gossm ssh                               # Interactive instance and user selection
@@ -211,7 +211,11 @@ func runProxiedCommand(process, userArgs string, session *ssm.StartSessionOutput
 		return fmt.Errorf("invalid %s arguments: %w", process, err)
 	}
 
-	return internal.CallProcess(process, append([]string{"-o", proxyCommand}, parsedArgs...)...)
+	// Run ssh/scp with the terminal inherited directly: they manage their
+	// own tty (host-key prompts read it, ssh has its native ~. escape), and
+	// the raw-mode escape wrapper would steal their input and break output
+	// line endings.
+	return internal.CallProcessDirect(process, append([]string{"-o", proxyCommand}, parsedArgs...)...)
 }
 
 func init() {
