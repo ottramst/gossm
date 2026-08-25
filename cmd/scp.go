@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -28,16 +29,17 @@ var (
 	scpCommand = &cobra.Command{
 		Use:   "scp",
 		Short: "Transfer files using SCP via AWS Systems Manager",
-		Long: `Transfer files between your local machine and AWS instances using SCP 
+		Long: `Transfer files between your local machine and AWS instances using SCP
 through AWS Systems Manager Session Manager.
 
 This command establishes an SCP connection through SSM, allowing secure file
 transfers without requiring direct SSH access to the instance.
 
-Escape Sequence:
-  Enter ~.   Disconnect from the session (useful when network is stuck)
+Without --exec, an interactive flow guides you through the transfer: pick an
+instance, choose the direction, and enter the paths.
 
-Example:
+Examples:
+  gossm scp                                                        # guided interactive transfer
   gossm scp --exec "-i key.pem file.txt ec2-user@instance:/home/ec2-user/"
 `,
 		Run: runSCPCommand,
@@ -50,14 +52,18 @@ func runSCPCommand(cmd *cobra.Command, args []string) {
 
 	flagExec, _ := cmd.Flags().GetString("exec")
 
-	// Get and validate SCP command arguments
-	scpArgs, err := validateSCPArguments(flagExec)
-	if err != nil {
-		logErrorAndExit(err)
+	var scpArgs, targetInstanceID string
+	var err error
+	if strings.TrimSpace(flagExec) == "" {
+		// No --exec: guide the user through assembling the transfer
+		scpArgs, targetInstanceID, err = buildInteractiveSCP(ctx)
+	} else {
+		scpArgs, err = validateSCPArguments(flagExec)
+		if err == nil {
+			// Parse source and destination to find the target instance
+			targetInstanceID, err = findTargetInstanceID(ctx, scpArgs)
+		}
 	}
-
-	// Parse source and destination to find the target instance
-	targetInstanceID, err := findTargetInstanceID(ctx, scpArgs)
 	if err != nil {
 		logErrorAndExit(err)
 	}
@@ -82,6 +88,116 @@ func runSCPCommand(cmd *cobra.Command, args []string) {
 	if err != nil {
 		logErrorAndExit(err)
 	}
+}
+
+const (
+	directionUpload   = "upload: local -> remote"
+	directionDownload = "download: remote -> local"
+)
+
+// scpTransfer describes an interactively assembled transfer
+type scpTransfer struct {
+	user       string
+	host       string
+	localPath  string
+	remotePath string
+	identity   string
+	upload     bool
+	recursive  bool
+}
+
+// args renders the transfer as scp arguments
+func (t scpTransfer) args() []string {
+	var parts []string
+	if t.identity != "" {
+		parts = append(parts, "-i", t.identity)
+	}
+	if t.recursive {
+		parts = append(parts, "-r")
+	}
+
+	remote := fmt.Sprintf("%s@%s:%s", t.user, t.host, t.remotePath)
+	if t.upload {
+		return append(parts, t.localPath, remote)
+	}
+	return append(parts, remote, t.localPath)
+}
+
+// buildInteractiveSCP walks the user through assembling a transfer and
+// returns the scp argument string plus the target instance ID
+func buildInteractiveSCP(ctx context.Context) (string, string, error) {
+	target, err := internal.AskTarget(ctx, *credential.awsConfig)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to select target instance: %w", err)
+	}
+
+	direction, err := internal.AskSelect("Transfer direction:", []string{directionUpload, directionDownload})
+	if err != nil {
+		return "", "", err
+	}
+
+	sshUser, err := internal.AskUser()
+	if err != nil {
+		return "", "", err
+	}
+
+	identity, err := internal.AskInput("SSH identity file (empty for ssh defaults):", "")
+	if err != nil {
+		return "", "", err
+	}
+
+	transfer := scpTransfer{
+		user:     sshUser.Name,
+		host:     sshHostForTarget(target),
+		identity: identity,
+		upload:   direction == directionUpload,
+	}
+
+	if transfer.upload {
+		transfer.localPath, err = internal.AskInput("Local file or directory to upload:", "")
+		if err != nil {
+			return "", "", err
+		}
+		info, err := os.Stat(transfer.localPath)
+		if err != nil {
+			return "", "", fmt.Errorf("cannot read local path %q: %w", transfer.localPath, err)
+		}
+		transfer.recursive = info.IsDir()
+
+		transfer.remotePath, err = internal.AskInput("Remote destination path:", "~")
+		if err != nil {
+			return "", "", err
+		}
+	} else {
+		transfer.remotePath, err = internal.AskInput("Remote file or directory to download:", "")
+		if err != nil {
+			return "", "", err
+		}
+		if transfer.remotePath == "" {
+			return "", "", errors.New("a remote path is required")
+		}
+		transfer.recursive, err = internal.AskConfirm("Copy recursively (the remote path is a directory)?", false)
+		if err != nil {
+			return "", "", err
+		}
+
+		transfer.localPath, err = internal.AskInput("Local destination path:", ".")
+		if err != nil {
+			return "", "", err
+		}
+	}
+
+	scpArgs := shellquote.Join(transfer.args()...)
+
+	ok, err := internal.AskConfirm("Run: scp "+scpArgs, true)
+	if err != nil {
+		return "", "", err
+	}
+	if !ok {
+		return "", "", errors.New("transfer cancelled")
+	}
+
+	return scpArgs, target.Name, nil
 }
 
 // validateSCPArguments validates and parses the SCP command arguments
@@ -166,8 +282,7 @@ func startSSHSession(ctx context.Context, targetInstanceID string) (*ssm.StartSe
 
 func init() {
 	// Define command flags
-	scpCommand.Flags().StringP("exec", "e", "", "SCP command arguments (e.g., \"-r localfile user@instance:/remote/path\")")
-	_ = scpCommand.MarkFlagRequired("exec")
+	scpCommand.Flags().StringP("exec", "e", "", "SCP command arguments (e.g., \"-r localfile user@instance:/remote/path\"); omit for the interactive flow")
 
 	// Add command to root
 	rootCmd.AddCommand(scpCommand)

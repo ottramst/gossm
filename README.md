@@ -129,10 +129,12 @@ $ gossm ssh -e "-i key.pem ec2-user@i-1234567890abcdef0"
 Transfer files to/from instances via SCP through AWS SSM.
 
 ```bash
-# Transfer a local file to the remote server
-$ gossm scp -e "localfile.txt ec2-user@i-1234567890abcdef0:/home/ec2-user/"
+# Guided interactive transfer: pick an instance, choose upload/download,
+# enter the paths, confirm
+$ gossm scp
 
-# Transfer a remote file to local machine
+# Non-interactive: pass the full scp arguments
+$ gossm scp -e "localfile.txt ec2-user@i-1234567890abcdef0:/home/ec2-user/"
 $ gossm scp -e "-i key.pem ec2-user@i-1234567890abcdef0:/remote/path/file.txt local.txt"
 ```
 

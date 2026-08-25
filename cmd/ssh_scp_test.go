@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	"github.com/kballard/go-shellquote"
 	"github.com/ottramst/gossm/internal"
 )
 
@@ -74,6 +76,54 @@ func TestResolveTargetHostInstanceID(t *testing.T) {
 		if got != id {
 			t.Errorf("resolveTargetHost(%q) = %q, want the ID unchanged", id, got)
 		}
+	}
+}
+
+func TestSCPTransferArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		transfer scpTransfer
+		want     []string
+	}{
+		{
+			name:     "upload",
+			transfer: scpTransfer{user: "ec2-user", host: "i-123", localPath: "file.txt", remotePath: "~", upload: true},
+			want:     []string{"file.txt", "ec2-user@i-123:~"},
+		},
+		{
+			name:     "download",
+			transfer: scpTransfer{user: "root", host: "pub.example.com", localPath: ".", remotePath: "/var/log/app.log"},
+			want:     []string{"root@pub.example.com:/var/log/app.log", "."},
+		},
+		{
+			name:     "upload directory with identity",
+			transfer: scpTransfer{user: "u", host: "i-1", localPath: "dist", remotePath: "/opt", identity: "~/.ssh/key.pem", upload: true, recursive: true},
+			want:     []string{"-i", "~/.ssh/key.pem", "-r", "dist", "u@i-1:/opt"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.transfer.args()
+			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Errorf("args() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// Paths with spaces must survive the quote/split round trip between the
+// interactive builder and runProxiedCommand.
+func TestSCPTransferArgsQuoting(t *testing.T) {
+	transfer := scpTransfer{user: "u", host: "i-1", localPath: "my file.txt", remotePath: "/tmp/dest dir/", upload: true}
+
+	joined := shellquote.Join(transfer.args()...)
+	parts, err := shellquote.Split(joined)
+	if err != nil {
+		t.Fatalf("round trip failed: %v", err)
+	}
+	if fmt.Sprint(parts) != fmt.Sprint([]string{"my file.txt", "u@i-1:/tmp/dest dir/"}) {
+		t.Errorf("round trip = %v", parts)
 	}
 }
 
