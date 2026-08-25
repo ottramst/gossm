@@ -13,6 +13,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	"github.com/aws/smithy-go"
 )
 
 // fakeEC2 implements ec2API with configurable responses.
@@ -33,6 +34,7 @@ func (f *fakeEC2) DescribeRegions(_ context.Context, in *ec2.DescribeRegionsInpu
 type fakeSSM struct {
 	describeInstanceInformation func(*ssm.DescribeInstanceInformationInput) (*ssm.DescribeInstanceInformationOutput, error)
 	getCommandInvocation        func(*ssm.GetCommandInvocationInput) (*ssm.GetCommandInvocationOutput, error)
+	terminateSession            func(*ssm.TerminateSessionInput) (*ssm.TerminateSessionOutput, error)
 }
 
 func (f *fakeSSM) DescribeInstanceInformation(_ context.Context, in *ssm.DescribeInstanceInformationInput, _ ...func(*ssm.Options)) (*ssm.DescribeInstanceInformationOutput, error) {
@@ -41,6 +43,10 @@ func (f *fakeSSM) DescribeInstanceInformation(_ context.Context, in *ssm.Describ
 
 func (f *fakeSSM) GetCommandInvocation(_ context.Context, in *ssm.GetCommandInvocationInput, _ ...func(*ssm.Options)) (*ssm.GetCommandInvocationOutput, error) {
 	return f.getCommandInvocation(in)
+}
+
+func (f *fakeSSM) TerminateSession(_ context.Context, in *ssm.TerminateSessionInput, _ ...func(*ssm.Options)) (*ssm.TerminateSessionOutput, error) {
+	return f.terminateSession(in)
 }
 
 func instanceInfo(ids ...string) []ssmtypes.InstanceInformation {
@@ -296,6 +302,36 @@ func TestMonitorCommandInvocation(t *testing.T) {
 
 		monitorCommandInvocation(context.Background(), f, &ssm.GetCommandInvocationInput{})
 	})
+}
+
+// Regression test for #48: a session that ended on its own is already
+// terminated server-side; cleanup must treat the API's rejection as success
+// instead of failing every normal Ctrl+D exit.
+func TestDeleteStartSessionAlreadyTerminated(t *testing.T) {
+	input := &ssm.TerminateSessionInput{SessionId: aws.String("s-1")}
+
+	for _, code := range []string{"ValidationException", "DoesNotExistException"} {
+		f := &fakeSSM{terminateSession: func(*ssm.TerminateSessionInput) (*ssm.TerminateSessionOutput, error) {
+			return nil, &smithy.GenericAPIError{Code: code, Message: "Session is not in a valid state"}
+		}}
+		if err := deleteStartSession(context.Background(), f, input); err != nil {
+			t.Errorf("%s should be treated as already terminated, got: %v", code, err)
+		}
+	}
+
+	denied := &fakeSSM{terminateSession: func(*ssm.TerminateSessionInput) (*ssm.TerminateSessionOutput, error) {
+		return nil, &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "nope"}
+	}}
+	if err := deleteStartSession(context.Background(), denied, input); err == nil {
+		t.Error("real API errors must still surface")
+	}
+
+	ok := &fakeSSM{terminateSession: func(*ssm.TerminateSessionInput) (*ssm.TerminateSessionOutput, error) {
+		return &ssm.TerminateSessionOutput{}, nil
+	}}
+	if err := deleteStartSession(context.Background(), ok, input); err != nil {
+		t.Errorf("unexpected error on clean termination: %v", err)
+	}
 }
 
 func TestGenerateSSHExecCommand(t *testing.T) {
