@@ -6,7 +6,7 @@ toolchain go1.26.6
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
-	github.com/aws/aws-sdk-go-v2 v1.47.0
+	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.4
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.328.0
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.73.7
