@@ -6,12 +6,12 @@ toolchain go1.26.6
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
-	github.com/aws/aws-sdk-go-v2 v1.47.4
+	github.com/aws/aws-sdk-go-v2 v1.47.5
 	github.com/aws/aws-sdk-go-v2/config v1.33.11
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.336.1
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.81.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.5
-	github.com/aws/smithy-go v1.28.6
+	github.com/aws/smithy-go v1.28.7
 	github.com/fatih/color v1.19.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/spf13/cobra v1.10.2
